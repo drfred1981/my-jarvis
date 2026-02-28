@@ -8,17 +8,42 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    gnupg \
+    lsb-release \
+    wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install kubectl
+# --- Java JDK 21 ---
+RUN wget -qO- https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor -o /usr/share/keyrings/adoptium.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/adoptium.list \
+    && apt-get update && apt-get install -y --no-install-recommends temurin-21-jdk \
+    && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME="/usr/lib/jvm/temurin-21-jdk-amd64"
+
+# --- Maven ---
+ARG MAVEN_VERSION=3.9.9
+RUN wget -qO- "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+    | tar xz -C /opt \
+    && ln -s /opt/apache-maven-${MAVEN_VERSION}/bin/mvn /usr/local/bin/mvn
+
+# --- Docker CLI (for Docker-in-Docker) ---
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- kubectl ---
 RUN curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
     -o /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl
 
-# Install Claude Code globally
+# --- Claude Code ---
 RUN npm install -g @anthropic-ai/claude-code
 
-# Create app user
-RUN useradd -m -s /bin/bash jarvis
+# Create app user and add to docker group
+RUN groupadd -f docker && useradd -m -s /bin/bash -G docker jarvis
 
 # Python virtual environment (persists even if workdir is mounted)
 RUN python3 -m venv /home/jarvis/venv

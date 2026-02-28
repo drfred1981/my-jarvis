@@ -16,6 +16,8 @@ services:
       - ..:/home/jarvis/app
       # Kubeconfig
       - ${KUBECONFIG:-~/.kube/config}:/home/jarvis/.kube/config:ro
+      # Docker socket for Docker-in-Docker
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
