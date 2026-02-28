@@ -64,7 +64,8 @@ class ClaudeRunner:
                      "mcp__kubernetes__*,"
                      "mcp__fluxcd__*,"
                      "mcp__homeassistant__*,"
-                     "mcp__grafana-prometheus__*"])
+                     "mcp__grafana-prometheus__*,"
+                     "mcp__git__*"])
 
         # Resume existing conversation
         if session.claude_session_id:
