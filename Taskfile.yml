@@ -1,0 +1,72 @@
+version: "3"
+
+vars:
+  IMAGE: ghcr.io/drfred1981/my-jarvis/jarvis
+  TAG: dev
+
+tasks:
+  build:
+    desc: Build the Docker image
+    cmds:
+      - docker build -t {{.IMAGE}}:{{.TAG}} -f docker/Dockerfile .
+
+  up:
+    desc: Start Jarvis in development mode
+    dir: docker
+    cmds:
+      - docker compose up --build
+
+  down:
+    desc: Stop Jarvis
+    dir: docker
+    cmds:
+      - docker compose down
+
+  logs:
+    desc: Follow Jarvis logs
+    cmds:
+      - docker logs -f jarvis
+
+  shell:
+    desc: Open a shell in the running container
+    cmds:
+      - docker exec -it jarvis bash
+
+  health:
+    desc: Check Jarvis health endpoint
+    cmds:
+      - curl -sf http://localhost:8080/api/health | python3 -m json.tool
+
+  validate:
+    desc: Validate all Python and JSON files
+    cmds:
+      - python3 -c "
+        import ast, json, sys;
+        errors = [];
+        {{range .PYTHON_FILES}}
+        try:
+          ast.parse(open('{{.}}').read())
+        except SyntaxError as e:
+          errors.append(f'{{.}}: {e}');
+        {{end}}
+        for f in ['.claude/settings.json', 'mcp.json']:
+          try:
+            json.load(open(f))
+          except Exception as e:
+            errors.append(f'{f}: {e}');
+        if errors:
+          print('ERRORS:'); [print(f'  {e}') for e in errors]; sys.exit(1)
+        else:
+          print('All files valid')
+        "
+    vars:
+      PYTHON_FILES:
+        sh: find src -name '*.py' -not -name '__init__.py' | sort
+
+  env:
+    desc: Create .env from template if it doesn't exist
+    cmds:
+      - cp -n .env.example .env
+      - echo ".env created - edit it with your tokens"
+    status:
+      - test -f .env

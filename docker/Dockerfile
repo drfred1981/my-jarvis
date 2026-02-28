@@ -81,15 +81,7 @@ RUN chown -R jarvis:jarvis /home/jarvis
 
 USER jarvis
 
-# Environment variables (overridden at runtime)
-ENV ANTHROPIC_API_KEY=""
-ENV DISCORD_BOT_TOKEN=""
-ENV GITHUB_TOKEN=""
-ENV HA_TOKEN=""
-ENV HA_URL=""
-ENV PROMETHEUS_URL=""
-ENV GRAFANA_URL=""
-ENV GRAFANA_TOKEN=""
+# Non-secret defaults only (secrets are injected at runtime via .env / k8s secrets)
 ENV JARVIS_PROJECT_DIR="/home/jarvis/app"
 
 EXPOSE 8080
