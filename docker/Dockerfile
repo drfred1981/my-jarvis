@@ -39,6 +39,17 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /
 RUN curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
     -o /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl
 
+# --- mise (runtime version manager) ---
+RUN curl -fsSL https://mise.jdx.dev/install.sh | MISE_INSTALL_PATH=/usr/local/bin/mise bash
+
+# --- sops (secrets encryption) ---
+ARG SOPS_VERSION=3.9.4
+RUN curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" \
+    -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops
+
+# --- task (task runner / Taskfile) ---
+RUN sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
 # --- Claude Code ---
 RUN npm install -g @anthropic-ai/claude-code
 
