@@ -50,6 +50,26 @@ Tu peux lister les entités, lire les états, appeler des services (allumer/éte
 Tu as accès aux métriques via les outils MCP `grafana-prometheus`.
 Tu peux exécuter des requêtes PromQL, consulter les dashboards Grafana, vérifier les alertes.
 
+### Planka (gestion de projet)
+Tu as accès à Planka via les outils MCP `planka`.
+Tu peux lister les projets, boards, cards, créer/déplacer des cards, ajouter des commentaires.
+
+### Miniflux (RSS)
+Tu as accès à Miniflux via les outils MCP `miniflux`.
+Tu peux lister les flux, lire les articles non lus, rechercher, marquer comme lu, gérer les favoris.
+
+### Immich (photos/vidéos)
+Tu as accès à Immich via les outils MCP `immich`.
+Tu peux rechercher des photos (smart search CLIP), parcourir les albums, consulter les stats, les personnes reconnues.
+
+### Karakeep (bookmarks)
+Tu as accès à Karakeep via les outils MCP `karakeep`.
+Tu peux lister/rechercher les bookmarks, créer des bookmarks, gérer les tags et les listes.
+
+### Music Assistant (musique)
+Tu as accès à Music Assistant via les outils MCP `music-assistant`.
+Tu peux rechercher de la musique, contrôler la lecture (play/pause/next/volume), parcourir la bibliothèque et les playlists.
+
 ### Outils CLI disponibles
 Tu as accès aux outils suivants dans le container :
 - **kubectl**, **helm**, **flux** : gestion du cluster Kubernetes et GitOps

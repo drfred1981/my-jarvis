@@ -5,7 +5,12 @@
       "mcp__fluxcd__*",
       "mcp__homeassistant__*",
       "mcp__grafana-prometheus__*",
-      "mcp__git__*"
+      "mcp__git__*",
+      "mcp__planka__*",
+      "mcp__miniflux__*",
+      "mcp__immich__*",
+      "mcp__karakeep__*",
+      "mcp__music-assistant__*"
     ]
   },
   "mcpServers": {
@@ -28,6 +33,26 @@
     "git": {
       "command": "python3",
       "args": ["src/mcp-servers/git/server.py"]
+    },
+    "planka": {
+      "command": "python3",
+      "args": ["src/mcp-servers/planka/server.py"]
+    },
+    "miniflux": {
+      "command": "python3",
+      "args": ["src/mcp-servers/miniflux/server.py"]
+    },
+    "immich": {
+      "command": "python3",
+      "args": ["src/mcp-servers/immich/server.py"]
+    },
+    "karakeep": {
+      "command": "python3",
+      "args": ["src/mcp-servers/karakeep/server.py"]
+    },
+    "music-assistant": {
+      "command": "python3",
+      "args": ["src/mcp-servers/music-assistant/server.py"]
     }
   }
 }

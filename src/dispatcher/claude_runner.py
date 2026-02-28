@@ -65,7 +65,12 @@ class ClaudeRunner:
                      "mcp__fluxcd__*,"
                      "mcp__homeassistant__*,"
                      "mcp__grafana-prometheus__*,"
-                     "mcp__git__*"])
+                     "mcp__git__*,"
+                     "mcp__planka__*,"
+                     "mcp__miniflux__*,"
+                     "mcp__immich__*,"
+                     "mcp__karakeep__*,"
+                     "mcp__music-assistant__*"])
 
         # Resume existing conversation
         if session.claude_session_id:
