@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+
+# Claude Code - keep settings, ignore transient data
+.claude/*
+!.claude/settings.json

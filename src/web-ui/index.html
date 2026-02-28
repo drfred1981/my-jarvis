@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jarvis</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Jarvis</h1>
+            <span class="status" id="status">Connexion...</span>
+        </header>
+        <main id="chat">
+            <div id="messages"></div>
+        </main>
+        <footer>
+            <form id="input-form">
+                <textarea id="input" placeholder="Parle à Jarvis..." rows="1" autofocus></textarea>
+                <button type="submit" id="send-btn">Envoyer</button>
+            </form>
+        </footer>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

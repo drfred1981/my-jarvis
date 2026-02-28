@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__kubernetes__*",
+      "mcp__fluxcd__*",
+      "mcp__homeassistant__*",
+      "mcp__grafana-prometheus__*"
+    ]
+  },
+  "mcpServers": {
+    "kubernetes": {
+      "command": "python3",
+      "args": ["src/mcp-servers/kubernetes/server.py"]
+    },
+    "fluxcd": {
+      "command": "python3",
+      "args": ["src/mcp-servers/fluxcd/server.py"]
+    },
+    "homeassistant": {
+      "command": "python3",
+      "args": ["src/mcp-servers/homeassistant/server.py"]
+    },
+    "grafana-prometheus": {
+      "command": "python3",
+      "args": ["src/mcp-servers/grafana-prometheus/server.py"]
+    }
+  }
+}
