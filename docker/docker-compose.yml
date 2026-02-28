@@ -14,6 +14,8 @@ services:
     volumes:
       # Mount the entire project as working directory
       - ..:/home/jarvis/app
+      # Claude Code auth config (login session, not API key)
+      - ~/.claude:/home/jarvis/.claude
       # Kubeconfig
       - ${KUBECONFIG:-~/.kube/config}:/home/jarvis/.kube/config:ro
       # Docker socket for Docker-in-Docker

@@ -22,7 +22,7 @@ Discord / Web UI / Synology Chat
 
 - Docker (avec Docker Compose)
 - Un cluster Kubernetes accessible (kubeconfig)
-- Une clé API Anthropic (pour Claude Code)
+- Claude Code installé et authentifié (`claude login`)
 
 ## Installation
 
@@ -33,23 +33,29 @@ git clone https://github.com/drfred1981/my-jarvis.git
 cd my-jarvis
 ```
 
-### 2. Créer le fichier `.env`
+### 2. Authentifier Claude Code
+
+Jarvis utilise Claude Code directement (pas de clé API). Il faut être authentifié sur la machine hôte :
+
+```bash
+# Se connecter à Claude Code (une seule fois)
+claude login
+```
+
+La config `~/.claude/` est montée dans le container automatiquement.
+
+### 3. Créer le fichier `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Ouvrir `.env` et remplir les valeurs. Au minimum :
+Ouvrir `.env` et remplir les valeurs (tokens des services).
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-...    # Obligatoire
-```
-
-### 3. Récupérer les tokens et clés API
+### 4. Récupérer les tokens et clés API
 
 | Service | Comment obtenir le token |
 |---------|------------------------|
-| **Anthropic** | https://console.anthropic.com/settings/keys |
 | **Discord** | Voir section [Créer le bot Discord](#créer-le-bot-discord) ci-dessous |
 | **Home Assistant** | Profil utilisateur HA > Tokens de longue durée > Créer un token |
 | **GitHub** | https://github.com/settings/tokens > Fine-grained token avec accès aux repos |
@@ -60,7 +66,7 @@ ANTHROPIC_API_KEY=sk-ant-...    # Obligatoire
 | **Karakeep** | Settings > API Keys |
 | **Music Assistant** | Pas de token requis |
 
-### 4. Vérifier le kubeconfig
+### 5. Vérifier le kubeconfig
 
 Jarvis a besoin d'accéder au cluster Kubernetes. Vérifier que le kubeconfig est disponible :
 
@@ -73,7 +79,7 @@ kubectl get nodes
 export KUBECONFIG=/chemin/vers/kubeconfig
 ```
 
-### 5. Adapter les URLs des services
+### 6. Adapter les URLs des services
 
 Dans `.env`, remplacer les URLs par défaut par les URLs réelles de vos services dans le cluster. Exemples :
 
@@ -85,7 +91,7 @@ PROMETHEUS_URL=http://prometheus-server.monitoring.svc.cluster.local:9090
 
 Les URLs dépendent de vos namespaces et noms de services Kubernetes.
 
-### 6. Configurer les repos Git
+### 7. Configurer les repos Git
 
 Lister vos repos dans la variable `GIT_REPOS` au format JSON :
 
@@ -93,7 +99,7 @@ Lister vos repos dans la variable `GIT_REPOS` au format JSON :
 GIT_REPOS={"infra":"https://github.com/user/home-k8s-infra.git","apps":"https://github.com/user/home-k8s-apps.git"}
 ```
 
-### 7. Builder et lancer
+### 8. Builder et lancer
 
 ```bash
 cd docker
