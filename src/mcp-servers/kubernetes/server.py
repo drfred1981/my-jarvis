@@ -19,22 +19,46 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("kubernetes")
 
 
-def get_k8s_clients():
-    """Initialize Kubernetes clients (in-cluster or kubeconfig)."""
+_core_v1 = None
+_apps_v1 = None
+_networking_v1 = None
+_k8s_init_error = None
+
+
+def _init_k8s():
+    """Lazy-init Kubernetes clients."""
+    global _core_v1, _apps_v1, _networking_v1, _k8s_init_error
+    if _core_v1 is not None:
+        return
+    if _k8s_init_error:
+        raise RuntimeError(_k8s_init_error)
     try:
-        config.load_incluster_config()
-    except config.ConfigException:
-        config.load_kube_config()
-    return client.CoreV1Api(), client.AppsV1Api(), client.NetworkingV1Api()
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config()
+        _core_v1 = client.CoreV1Api()
+        _apps_v1 = client.AppsV1Api()
+        _networking_v1 = client.NetworkingV1Api()
+    except Exception as e:
+        _k8s_init_error = f"Kubernetes not available: {e}"
+        raise RuntimeError(_k8s_init_error)
 
 
-core_v1, apps_v1, networking_v1 = get_k8s_clients()
+def _core() -> client.CoreV1Api:
+    _init_k8s()
+    return _core_v1
+
+
+def _apps() -> client.AppsV1Api:
+    _init_k8s()
+    return _apps_v1
 
 
 @mcp.tool()
 def list_namespaces() -> str:
     """List all namespaces in the cluster."""
-    namespaces = core_v1.list_namespace()
+    namespaces = _core().list_namespace()
     return json.dumps([ns.metadata.name for ns in namespaces.items], indent=2)
 
 
@@ -49,7 +73,7 @@ def list_pods(namespace: str = "default", label_selector: str = "") -> str:
     kwargs = {"namespace": namespace}
     if label_selector:
         kwargs["label_selector"] = label_selector
-    pods = core_v1.list_namespaced_pod(**kwargs)
+    pods = _core().list_namespaced_pod(**kwargs)
     result = []
     for pod in pods.items:
         containers = []
@@ -84,7 +108,7 @@ def get_pod_logs(name: str, namespace: str = "default", container: str = "", tai
     if container:
         kwargs["container"] = container
     try:
-        return core_v1.read_namespaced_pod_log(**kwargs)
+        return _core().read_namespaced_pod_log(**kwargs)
     except ApiException as e:
         return f"Error reading logs: {e.reason}"
 
@@ -98,7 +122,7 @@ def describe_pod(name: str, namespace: str = "default") -> str:
         namespace: Kubernetes namespace
     """
     try:
-        pod = core_v1.read_namespaced_pod(name=name, namespace=namespace)
+        pod = _core().read_namespaced_pod(name=name, namespace=namespace)
         return json.dumps({
             "name": pod.metadata.name,
             "namespace": pod.metadata.namespace,
@@ -136,7 +160,7 @@ def list_deployments(namespace: str = "default") -> str:
     Args:
         namespace: Kubernetes namespace
     """
-    deps = apps_v1.list_namespaced_deployment(namespace=namespace)
+    deps = _apps().list_namespaced_deployment(namespace=namespace)
     result = []
     for d in deps.items:
         result.append({
@@ -156,7 +180,7 @@ def list_services(namespace: str = "default") -> str:
     Args:
         namespace: Kubernetes namespace
     """
-    svcs = core_v1.list_namespaced_service(namespace=namespace)
+    svcs = _core().list_namespaced_service(namespace=namespace)
     result = []
     for svc in svcs.items:
         result.append({
@@ -175,7 +199,7 @@ def list_services(namespace: str = "default") -> str:
 @mcp.tool()
 def get_nodes_status() -> str:
     """Get status of all cluster nodes with resource usage."""
-    nodes = core_v1.list_node()
+    nodes = _core().list_node()
     result = []
     for node in nodes.items:
         conditions = {c.type: c.status for c in node.status.conditions}
@@ -205,8 +229,8 @@ def get_nodes_status() -> str:
 @mcp.tool()
 def get_cluster_health() -> str:
     """Get an overview of cluster health: nodes, problem pods, resource pressure."""
-    nodes = core_v1.list_node()
-    all_pods = core_v1.list_pod_for_all_namespaces()
+    nodes = _core().list_node()
+    all_pods = _core().list_pod_for_all_namespaces()
 
     problem_pods = []
     for pod in all_pods.items:
@@ -262,7 +286,7 @@ def _container_state(state) -> str:
 def _get_events(namespace: str, involved_object: str) -> list[dict]:
     """Get recent events for a resource."""
     try:
-        events = core_v1.list_namespaced_event(namespace=namespace)
+        events = _core().list_namespaced_event(namespace=namespace)
         kind, name = involved_object.split("/", 1)
         return [
             {

@@ -22,6 +22,7 @@ from channels.discord_bot import DiscordBot
 from channels.web_socket import ConnectionManager
 from monitor import Monitor
 from notifier import Notifier
+from services import get_available_services, log_service_status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,7 +80,16 @@ async def clear_session(session_id: str):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    services = get_available_services()
+    active = [name for name, ok in services.items() if ok]
+    inactive = [name for name, ok in services.items() if not ok]
+    return {
+        "status": "ok",
+        "services": {
+            "active": active,
+            "inactive": inactive,
+        },
+    }
 
 
 # --- WebSocket for real-time chat ---
@@ -118,19 +128,26 @@ async def synology_webhook(payload: dict):
 async def startup():
     global discord_bot
 
-    # Channels
-    discord_token = os.getenv("DISCORD_BOT_TOKEN")
+    # Log service availability
+    log_service_status()
+
+    # Channels - Discord
+    discord_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
     if discord_token:
-        discord_bot = DiscordBot(claude_runner=claude, token=discord_token)
-        await discord_bot.start_background()
-        notifier.set_discord_bot(discord_bot)
-        logger.info("Channel enabled: Discord")
+        try:
+            discord_bot = DiscordBot(claude_runner=claude, token=discord_token)
+            await discord_bot.start_background()
+            notifier.set_discord_bot(discord_bot)
+            logger.info("Channel enabled: Discord")
+        except Exception as e:
+            logger.warning("Channel failed: Discord (%s)", e)
+            discord_bot = None
     else:
         logger.info("Channel disabled: Discord (DISCORD_BOT_TOKEN not set)")
 
     notifier.set_ws_manager(ws_manager)
 
-    synology_url = os.getenv("SYNOLOGY_CHAT_WEBHOOK_URL")
+    synology_url = os.getenv("SYNOLOGY_CHAT_WEBHOOK_URL", "").strip()
     if synology_url:
         logger.info("Channel enabled: Synology Chat (webhook)")
     else:
@@ -138,21 +155,11 @@ async def startup():
 
     logger.info("Channel enabled: Web UI (http://0.0.0.0:8080)")
 
-    # Services
-    for name, var in [
-        ("Home Assistant", "HA_URL"),
-        ("Prometheus", "PROMETHEUS_URL"),
-        ("Grafana", "GRAFANA_URL"),
-        ("FluxCD repo", "FLUX_REPO_URL"),
-    ]:
-        val = os.getenv(var)
-        if val:
-            logger.info("Service configured: %s (%s)", name, val)
-        else:
-            logger.info("Service not configured: %s (%s not set)", name, var)
-
     # Proactive monitoring
-    await monitor.start()
+    try:
+        await monitor.start()
+    except Exception as e:
+        logger.warning("Monitoring failed to start: %s", e)
 
     logger.info("Jarvis dispatcher ready")
 
@@ -161,7 +168,10 @@ async def startup():
 async def shutdown():
     await monitor.stop()
     if discord_bot:
-        await discord_bot.close()
+        try:
+            await discord_bot.close()
+        except Exception:
+            pass
     logger.info("Jarvis dispatcher stopped")
 
 

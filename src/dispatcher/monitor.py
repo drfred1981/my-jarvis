@@ -2,12 +2,15 @@
 
 Periodically sends check prompts to Claude Code and dispatches
 alerts to all configured channels when issues are detected.
+Only runs checks for services that are actually configured.
 """
 
 import asyncio
 import logging
 import os
 from dataclasses import dataclass
+
+from services import is_monitor_check_available
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +75,22 @@ class Monitor:
             logger.info("Monitoring disabled (JARVIS_MONITORING=false)")
             return
 
-        for check in DEFAULT_CHECKS:
-            task = asyncio.create_task(self._run_check_loop(check))
-            self._tasks.append(task)
+        active_checks = []
+        skipped_checks = []
 
-        logger.info(
-            "Monitoring started: %d checks",
-            len(DEFAULT_CHECKS),
-        )
+        for check in DEFAULT_CHECKS:
+            if is_monitor_check_available(check.name):
+                task = asyncio.create_task(self._run_check_loop(check))
+                self._tasks.append(task)
+                active_checks.append(check.name)
+            else:
+                skipped_checks.append(check.name)
+
+        if active_checks:
+            logger.info("Monitoring started: %s", ", ".join(active_checks))
+        if skipped_checks:
+            logger.info("Monitoring checks skipped (services not configured): %s",
+                        ", ".join(skipped_checks))
 
     async def stop(self):
         for task in self._tasks:

@@ -18,13 +18,27 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("fluxcd")
 
-# Initialize K8s client
-try:
-    config.load_incluster_config()
-except config.ConfigException:
-    config.load_kube_config()
+_custom_api = None
+_k8s_init_error = None
 
-custom_api = client.CustomObjectsApi()
+
+def _api() -> client.CustomObjectsApi:
+    """Lazy-init Kubernetes client."""
+    global _custom_api, _k8s_init_error
+    if _custom_api is not None:
+        return _custom_api
+    if _k8s_init_error:
+        raise RuntimeError(_k8s_init_error)
+    try:
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config()
+        _custom_api = client.CustomObjectsApi()
+        return _custom_api
+    except Exception as e:
+        _k8s_init_error = f"Kubernetes not available: {e}"
+        raise RuntimeError(_k8s_init_error)
 
 # FluxCD CRD groups
 FLUX_GROUP = "source.toolkit.fluxcd.io"
@@ -41,11 +55,11 @@ def list_git_repositories(namespace: str = "") -> str:
     """
     try:
         if namespace:
-            items = custom_api.list_namespaced_custom_object(
+            items = _api().list_namespaced_custom_object(
                 FLUX_GROUP, "v1", namespace, "gitrepositories"
             )
         else:
-            items = custom_api.list_cluster_custom_object(
+            items = _api().list_cluster_custom_object(
                 FLUX_GROUP, "v1", "gitrepositories"
             )
         result = []
@@ -75,11 +89,11 @@ def list_kustomizations(namespace: str = "") -> str:
     """
     try:
         if namespace:
-            items = custom_api.list_namespaced_custom_object(
+            items = _api().list_namespaced_custom_object(
                 KUSTOMIZE_GROUP, "v1", namespace, "kustomizations"
             )
         else:
-            items = custom_api.list_cluster_custom_object(
+            items = _api().list_cluster_custom_object(
                 KUSTOMIZE_GROUP, "v1", "kustomizations"
             )
         result = []
@@ -110,11 +124,11 @@ def list_helm_releases(namespace: str = "") -> str:
     """
     try:
         if namespace:
-            items = custom_api.list_namespaced_custom_object(
+            items = _api().list_namespaced_custom_object(
                 HELM_GROUP, "v2", namespace, "helmreleases"
             )
         else:
-            items = custom_api.list_cluster_custom_object(
+            items = _api().list_cluster_custom_object(
                 HELM_GROUP, "v2", "helmreleases"
             )
         result = []
@@ -148,7 +162,7 @@ def get_reconciliation_status() -> str:
     report = {"git_repositories": [], "kustomizations": [], "helm_releases": []}
 
     try:
-        grs = custom_api.list_cluster_custom_object(FLUX_GROUP, "v1", "gitrepositories")
+        grs = _api().list_cluster_custom_object(FLUX_GROUP, "v1", "gitrepositories")
         for item in grs.get("items", []):
             conditions = item.get("status", {}).get("conditions", [])
             ready = next((c for c in conditions if c["type"] == "Ready"), {})
@@ -162,7 +176,7 @@ def get_reconciliation_status() -> str:
         report["git_repositories"] = "error fetching"
 
     try:
-        ks = custom_api.list_cluster_custom_object(KUSTOMIZE_GROUP, "v1", "kustomizations")
+        ks = _api().list_cluster_custom_object(KUSTOMIZE_GROUP, "v1", "kustomizations")
         for item in ks.get("items", []):
             conditions = item.get("status", {}).get("conditions", [])
             ready = next((c for c in conditions if c["type"] == "Ready"), {})
@@ -176,7 +190,7 @@ def get_reconciliation_status() -> str:
         report["kustomizations"] = "error fetching"
 
     try:
-        hrs = custom_api.list_cluster_custom_object(HELM_GROUP, "v2", "helmreleases")
+        hrs = _api().list_cluster_custom_object(HELM_GROUP, "v2", "helmreleases")
         for item in hrs.get("items", []):
             conditions = item.get("status", {}).get("conditions", [])
             ready = next((c for c in conditions if c["type"] == "Ready"), {})
