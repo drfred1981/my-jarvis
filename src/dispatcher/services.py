@@ -76,8 +76,10 @@ def get_active_mcp_config(base_config_path: str) -> dict:
 
 
 def get_allowed_tools_string(services: list[str]) -> str:
-    """Build the --allowedTools value for active services only."""
-    return ",".join(f"mcp__{name}__*" for name in services)
+    """Build the --allowedTools value for active services + Claude built-in tools."""
+    builtin = ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch"]
+    mcp = [f"mcp__{name}__*" for name in services]
+    return ",".join(builtin + mcp)
 
 
 def is_monitor_check_available(check_name: str) -> bool:

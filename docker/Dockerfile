@@ -90,6 +90,7 @@ USER jarvis
 # Claude Code works in /home/jarvis (persistent volume)
 # App code runs from /opt/jarvis/app
 ENV JARVIS_PROJECT_DIR="/home/jarvis"
+ENV CLAUDE_CODE_ACCEPT_TOS="true"
 
 EXPOSE 8080
 
