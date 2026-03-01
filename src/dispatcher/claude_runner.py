@@ -68,11 +68,14 @@ class ClaudeRunner:
 
     async def send_message(self, session_id: str, message: str) -> str:
         """Send a message to Claude Code and return the response."""
+        logger.info("Processing message for session %s: %s", session_id, message[:100])
+
         async with self._lock:
             session = self._get_or_create_session(session_id)
 
         # Detect active services
         active_services = get_active_services()
+        logger.info("Active MCP services: %s", active_services or "none")
 
         cmd = [
             "claude",
@@ -96,6 +99,8 @@ class ClaudeRunner:
         if session.claude_session_id:
             cmd.extend(["--resume", session.claude_session_id])
 
+        logger.info("Running: %s (cwd=%s)", " ".join(cmd[:6]) + " ...", JARVIS_PROJECT_DIR)
+
         env = os.environ.copy()
 
         try:
@@ -112,7 +117,7 @@ class ClaudeRunner:
 
             stderr_text = stderr.decode().strip()
             if stderr_text:
-                logger.debug("Claude Code stderr: %s", stderr_text)
+                logger.info("Claude Code stderr: %s", stderr_text[:500])
 
             if proc.returncode != 0:
                 logger.error("Claude Code error (rc=%d): %s", proc.returncode, stderr_text)

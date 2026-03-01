@@ -100,7 +100,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     try:
         while True:
             data = await websocket.receive_text()
+            logger.info("WebSocket message received (session=%s): %s", session_id, data[:100])
             response = await claude.send_message(session_id, data)
+            logger.info("WebSocket response (session=%s): %s", session_id, response[:100])
             await ws_manager.send_message(response, websocket)
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, session_id)

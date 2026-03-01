@@ -40,8 +40,13 @@ class DiscordBot:
             if message.author == self.client.user:
                 return
 
+            logger.debug("Discord message from %s in channel %s: %s",
+                         message.author, message.channel.id, message.content[:100])
+
             # Filter by channel if configured
             if self.allowed_channels and message.channel.id not in self.allowed_channels:
+                logger.debug("Ignored: channel %s not in allowed list %s",
+                             message.channel.id, self.allowed_channels)
                 return
 
             # Only respond to mentions or DMs
@@ -54,6 +59,8 @@ class DiscordBot:
             content = message.content.replace(f"<@{self.client.user.id}>", "").strip()
             if not content:
                 return
+
+            logger.info("Discord message received from %s: %s", message.author, content[:100])
 
             session_id = f"discord-{message.author.id}"
 
