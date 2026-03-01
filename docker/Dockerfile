@@ -76,6 +76,11 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # Working directory = mount point for the project
 WORKDIR /home/jarvis/app
 
+# Copy project files (overridden by volume mount in dev)
+COPY --chown=jarvis:jarvis CLAUDE.md mcp.json requirements.txt ./
+COPY --chown=jarvis:jarvis src/ src/
+COPY --chown=jarvis:jarvis .claude/ .claude/
+
 # Fix permissions
 RUN chown -R jarvis:jarvis /home/jarvis
 
