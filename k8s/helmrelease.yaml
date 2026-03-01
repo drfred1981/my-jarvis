@@ -1,0 +1,85 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: jarvis
+  namespace: default
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: app-template
+      version: 3.6.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+  values:
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/drfred1981/my-jarvis/jarvis
+              tag: latest
+            env:
+              ENV: production
+              JARVIS_PROJECT_DIR: /home/jarvis
+              JARVIS_MAX_BUDGET: "1.00"
+              JARVIS_MAX_TURNS: "10"
+              JARVIS_MONITORING: "true"
+            envFrom:
+              - secretRef:
+                  name: jarvis-secrets
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/health
+                    port: 8080
+                  initialDelaySeconds: 30
+                  periodSeconds: 30
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/health
+                    port: 8080
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+
+    service:
+      main:
+        controller: main
+        ports:
+          http:
+            port: 8080
+
+    persistence:
+      # Persistent home for Claude workspace (CLAUDE.md, mcp.json, .claude/, sessions)
+      home:
+        type: persistentVolumeClaim
+        accessMode: ReadWriteOnce
+        size: 5Gi
+        globalMounts:
+          - path: /home/jarvis
+
+      # Kubeconfig from ExternalSecret
+      kubeconfig:
+        type: secret
+        name: jarvis-kubeconfig
+        globalMounts:
+          - path: /home/jarvis/.kube/config
+            subPath: config
+            readOnly: true
+
+      # Docker socket (optional - for Docker-in-Docker)
+      # Uncomment if the node has Docker and you need DinD
+      # docker-socket:
+      #   type: hostPath
+      #   hostPath: /var/run/docker.sock
+      #   globalMounts:
+      #     - path: /var/run/docker.sock
