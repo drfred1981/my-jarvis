@@ -66,27 +66,30 @@ RUN groupadd -f docker && useradd -m -s /bin/bash -G docker jarvis
 RUN python3 -m venv /opt/jarvis/venv
 ENV PATH="/opt/jarvis/venv/bin:$PATH"
 
-# Pre-install Python dependencies into the venv (updated at runtime by entrypoint)
+# Pre-install Python dependencies
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
 # Entrypoint script
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# App code under /opt (safe from /home/jarvis volume mounts)
+# --- App source code in /opt/jarvis/app (immutable, not on volume) ---
 WORKDIR /opt/jarvis/app
-COPY --chown=jarvis:jarvis CLAUDE.md mcp.json requirements.txt ./
 COPY --chown=jarvis:jarvis src/ src/
-COPY --chown=jarvis:jarvis .claude/ .claude/
+COPY --chown=jarvis:jarvis requirements.txt ./
+
+# --- Claude config seed in /opt/jarvis/seed (copied to /home/jarvis at first boot) ---
+COPY --chown=jarvis:jarvis CLAUDE.md mcp.json /opt/jarvis/seed/
+COPY --chown=jarvis:jarvis .claude/ /opt/jarvis/seed/.claude/
 
 # Fix permissions
 RUN chown -R jarvis:jarvis /opt/jarvis /home/jarvis
 
 USER jarvis
 
-# JARVIS_PROJECT_DIR = where Claude Code runs (CLAUDE.md, mcp.json, src/)
-# /home/jarvis is free for volume mounts (persistent data, .claude auth, .kube)
-ENV JARVIS_PROJECT_DIR="/opt/jarvis/app"
+# Claude Code works in /home/jarvis (persistent volume)
+# App code runs from /opt/jarvis/app
+ENV JARVIS_PROJECT_DIR="/home/jarvis"
 
 EXPOSE 8080
 

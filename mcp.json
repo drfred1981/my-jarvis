@@ -2,43 +2,43 @@
   "mcpServers": {
     "kubernetes": {
       "command": "python3",
-      "args": ["src/mcp-servers/kubernetes/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/kubernetes/server.py"]
     },
     "fluxcd": {
       "command": "python3",
-      "args": ["src/mcp-servers/fluxcd/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/fluxcd/server.py"]
     },
     "homeassistant": {
       "command": "python3",
-      "args": ["src/mcp-servers/homeassistant/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/homeassistant/server.py"]
     },
     "grafana-prometheus": {
       "command": "python3",
-      "args": ["src/mcp-servers/grafana-prometheus/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/grafana-prometheus/server.py"]
     },
     "git": {
       "command": "python3",
-      "args": ["src/mcp-servers/git/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/git/server.py"]
     },
     "planka": {
       "command": "python3",
-      "args": ["src/mcp-servers/planka/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/planka/server.py"]
     },
     "miniflux": {
       "command": "python3",
-      "args": ["src/mcp-servers/miniflux/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/miniflux/server.py"]
     },
     "immich": {
       "command": "python3",
-      "args": ["src/mcp-servers/immich/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/immich/server.py"]
     },
     "karakeep": {
       "command": "python3",
-      "args": ["src/mcp-servers/karakeep/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/karakeep/server.py"]
     },
     "music-assistant": {
       "command": "python3",
-      "args": ["src/mcp-servers/music-assistant/server.py"]
+      "args": ["/opt/jarvis/app/src/mcp-servers/music-assistant/server.py"]
     }
   }
 }

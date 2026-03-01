@@ -12,10 +12,12 @@ services:
     environment:
       - ENV=development
     volumes:
-      # Mount project code over /opt/jarvis/app for live dev
-      - ..:/opt/jarvis/app
-      # Claude Code auth config (login session)
-      - ~/.claude:/home/jarvis/.claude
+      # App source code (live dev override)
+      - ../src:/opt/jarvis/app/src
+      # Claude config files (live dev override on persistent home)
+      - ../CLAUDE.md:/home/jarvis/CLAUDE.md
+      - ../mcp.json:/home/jarvis/mcp.json
+      - ../.claude:/home/jarvis/.claude
       # Kubeconfig
       - ${KUBECONFIG:-~/.kube/config}:/home/jarvis/.kube/config:ro
       # Docker socket for Docker-in-Docker
