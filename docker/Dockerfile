@@ -62,9 +62,9 @@ RUN npm install -g @anthropic-ai/claude-code
 # Create app user and add to docker group
 RUN groupadd -f docker && useradd -m -s /bin/bash -G docker jarvis
 
-# Python virtual environment (persists even if workdir is mounted)
-RUN python3 -m venv /home/jarvis/venv
-ENV PATH="/home/jarvis/venv/bin:$PATH"
+# Python venv under /opt (safe from /home/jarvis volume mounts)
+RUN python3 -m venv /opt/jarvis/venv
+ENV PATH="/opt/jarvis/venv/bin:$PATH"
 
 # Pre-install Python dependencies into the venv (updated at runtime by entrypoint)
 COPY requirements.txt /tmp/requirements.txt
@@ -73,21 +73,20 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.
 # Entrypoint script
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# Working directory = mount point for the project
-WORKDIR /home/jarvis/app
-
-# Copy project files (overridden by volume mount in dev)
+# App code under /opt (safe from /home/jarvis volume mounts)
+WORKDIR /opt/jarvis/app
 COPY --chown=jarvis:jarvis CLAUDE.md mcp.json requirements.txt ./
 COPY --chown=jarvis:jarvis src/ src/
 COPY --chown=jarvis:jarvis .claude/ .claude/
 
 # Fix permissions
-RUN chown -R jarvis:jarvis /home/jarvis
+RUN chown -R jarvis:jarvis /opt/jarvis /home/jarvis
 
 USER jarvis
 
-# Non-secret defaults only (secrets are injected at runtime via .env / k8s secrets)
-ENV JARVIS_PROJECT_DIR="/home/jarvis/app"
+# JARVIS_PROJECT_DIR = where Claude Code runs (CLAUDE.md, mcp.json, src/)
+# /home/jarvis is free for volume mounts (persistent data, .claude auth, .kube)
+ENV JARVIS_PROJECT_DIR="/opt/jarvis/app"
 
 EXPOSE 8080
 

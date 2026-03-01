@@ -12,9 +12,9 @@ services:
     environment:
       - ENV=development
     volumes:
-      # Mount the entire project as working directory
-      - ..:/home/jarvis/app
-      # Claude Code auth config (login session, not API key)
+      # Mount project code over /opt/jarvis/app for live dev
+      - ..:/opt/jarvis/app
+      # Claude Code auth config (login session)
       - ~/.claude:/home/jarvis/.claude
       # Kubeconfig
       - ${KUBECONFIG:-~/.kube/config}:/home/jarvis/.kube/config:ro

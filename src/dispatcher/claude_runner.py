@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Working directory where CLAUDE.md and MCP settings live
 JARVIS_PROJECT_DIR = os.environ.get(
-    "JARVIS_PROJECT_DIR", "/home/jarvis/app"
+    "JARVIS_PROJECT_DIR", "/opt/jarvis/app"
 )
 
 # MCP config file path (base config, will be filtered at runtime)
