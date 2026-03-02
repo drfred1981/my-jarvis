@@ -4,9 +4,13 @@ Central FastAPI application that receives messages from all channels
 (Discord, Web UI, Synology Chat) and routes them through Claude Code.
 """
 
+import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
+import threading
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -205,6 +209,75 @@ async def synology_webhook(payload: dict):
     return {"text": response}
 
 
+# --- Git repo pre-clone (runs in dispatcher, not in MCP server) ---
+
+def _preclone_git_repos():
+    """Pre-clone git repos at dispatcher startup.
+
+    MCP servers are short-lived subprocesses of `claude -p`, so they can't
+    reliably clone repos in background threads. We do it here in the
+    long-running dispatcher process instead, writing to the same cache
+    directory the MCP server expects.
+    """
+    repos_json = os.getenv("GIT_REPOS", "")
+    if not repos_json:
+        logger.info("Git pre-clone: GIT_REPOS not set, skipping")
+        return
+
+    try:
+        repos = json.loads(repos_json)
+    except json.JSONDecodeError:
+        logger.error("Git pre-clone: invalid GIT_REPOS JSON: %s", repos_json)
+        return
+
+    project_dir = os.environ.get("JARVIS_PROJECT_DIR", "/home/jarvis")
+    cache_dir = os.path.join(project_dir, "git-cache")
+    github_token = os.getenv("GITHUB_TOKEN", "")
+
+    os.makedirs(cache_dir, exist_ok=True)
+    logger.info("Git pre-clone: %d repos to %s", len(repos), cache_dir)
+
+    for name, url in repos.items():
+        repo_dir = os.path.join(cache_dir, name)
+        auth_url = url
+        if github_token and "github.com" in url:
+            auth_url = url.replace("https://", f"https://{github_token}@")
+
+        try:
+            if os.path.isdir(os.path.join(repo_dir, ".git")):
+                logger.info("Git pre-clone: %s already cached, pulling...", name)
+                result = subprocess.run(
+                    ["git", "-C", repo_dir, "fetch", "--all", "--prune"],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if result.returncode != 0:
+                    logger.warning("Git fetch failed for %s: %s", name, result.stderr.strip())
+                else:
+                    subprocess.run(
+                        ["git", "-C", repo_dir, "pull", "--rebase"],
+                        capture_output=True, text=True, timeout=60,
+                    )
+                    logger.info("Git pre-clone: %s updated", name)
+            else:
+                # Clean up partial clone dir
+                if os.path.exists(repo_dir):
+                    shutil.rmtree(repo_dir, ignore_errors=True)
+                    logger.info("Git pre-clone: removed partial dir for %s", name)
+                logger.info("Git pre-clone: cloning %s ...", name)
+                result = subprocess.run(
+                    ["git", "clone", auth_url, repo_dir],
+                    capture_output=True, text=True, timeout=120,
+                )
+                if result.returncode != 0:
+                    logger.error("Git clone failed for %s: %s", name, result.stderr.strip())
+                else:
+                    logger.info("Git pre-clone: %s cloned OK", name)
+        except Exception as e:
+            logger.error("Git pre-clone error for %s: %s", name, e)
+
+    logger.info("Git pre-clone: done")
+
+
 # --- Startup / Shutdown ---
 
 @app.on_event("startup")
@@ -215,6 +288,9 @@ async def startup():
     log_service_status()
     for name, available in get_available_services().items():
         SERVICES_AVAILABLE.labels(service=name).set(1 if available else 0)
+
+    # Pre-clone git repos in background thread (non-blocking)
+    threading.Thread(target=_preclone_git_repos, daemon=True, name="git-preclone").start()
 
     # Channels - Discord
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
