@@ -9,6 +9,8 @@ import os
 
 import httpx
 
+from metrics import NOTIFICATIONS_TOTAL
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,8 +36,10 @@ class Notifier:
         if self._discord_bot:
             try:
                 await self._notify_discord(message)
+                NOTIFICATIONS_TOTAL.labels(channel="discord", status="success").inc()
                 results.append("discord:ok")
             except Exception as e:
+                NOTIFICATIONS_TOTAL.labels(channel="discord", status="error").inc()
                 logger.error("Discord notification failed: %s", e)
                 results.append("discord:error")
 
@@ -43,8 +47,10 @@ class Notifier:
         if self._ws_manager:
             try:
                 await self._notify_websocket(message)
+                NOTIFICATIONS_TOTAL.labels(channel="websocket", status="success").inc()
                 results.append("ws:ok")
             except Exception as e:
+                NOTIFICATIONS_TOTAL.labels(channel="websocket", status="error").inc()
                 logger.error("WebSocket notification failed: %s", e)
                 results.append("ws:error")
 
@@ -52,8 +58,10 @@ class Notifier:
         if self._synology_webhook_url:
             try:
                 await self._notify_synology(message)
+                NOTIFICATIONS_TOTAL.labels(channel="synology", status="success").inc()
                 results.append("synology:ok")
             except Exception as e:
+                NOTIFICATIONS_TOTAL.labels(channel="synology", status="error").inc()
                 logger.error("Synology notification failed: %s", e)
                 results.append("synology:error")
 

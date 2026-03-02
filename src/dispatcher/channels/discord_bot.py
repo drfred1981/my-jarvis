@@ -6,6 +6,8 @@ import os
 
 import discord
 
+from metrics import MESSAGES_TOTAL, MESSAGE_DURATION_SECONDS
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,7 +67,9 @@ class DiscordBot:
             session_id = f"discord-{message.author.id}"
 
             async with message.channel.typing():
-                response = await self.claude_runner.send_message(session_id, content)
+                with MESSAGE_DURATION_SECONDS.labels(channel="discord").time():
+                    response = await self.claude_runner.send_message(session_id, content)
+            MESSAGES_TOTAL.labels(channel="discord", status="success").inc()
 
             # Discord has a 2000 char limit
             if len(response) > 1900:

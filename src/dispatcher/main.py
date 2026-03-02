@@ -12,6 +12,7 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
 # Ensure dispatcher package is importable
@@ -20,6 +21,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 from claude_runner import ClaudeRunner
 from channels.discord_bot import DiscordBot
 from channels.web_socket import ConnectionManager
+from metrics import (
+    MESSAGES_TOTAL,
+    MESSAGE_DURATION_SECONDS,
+    MONITOR_ALERTS_ACKNOWLEDGED_TOTAL,
+    SERVICES_AVAILABLE,
+    WEBSOCKET_CONNECTIONS,
+)
 from monitor import Monitor
 from notifier import Notifier
 from services import get_available_services, log_service_status
@@ -36,6 +44,10 @@ ws_manager = ConnectionManager()
 notifier = Notifier()
 monitor = Monitor(claude_runner=claude, notifier=notifier)
 discord_bot: DiscordBot | None = None
+
+# Prometheus metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 # Serve web UI static files
 WEB_UI_DIR = os.path.join(os.path.dirname(__file__), "..", "web-ui")
@@ -68,7 +80,9 @@ async def root():
 async def chat(req: MessageRequest):
     """Send a message to Jarvis and get a response."""
     logger.info("REST /api/chat (session=%s): %s", req.session_id, req.message[:100])
-    response = await claude.send_message(req.session_id, req.message)
+    with MESSAGE_DURATION_SECONDS.labels(channel="rest").time():
+        response = await claude.send_message(req.session_id, req.message)
+    MESSAGES_TOTAL.labels(channel="rest", status="success").inc()
     logger.info("REST response (session=%s): %s", req.session_id, response[:100])
     return MessageResponse(response=response, session_id=req.session_id)
 
@@ -97,6 +111,7 @@ async def list_alerts():
 async def acknowledge_alert(check_name: str):
     """Acknowledge a monitoring alert to resume the check."""
     if monitor.acknowledge_alert(check_name):
+        MONITOR_ALERTS_ACKNOWLEDGED_TOTAL.labels(check=check_name).inc()
         return {"status": "acknowledged", "check": check_name}
     return {"status": "not_found", "check": check_name}
 
@@ -120,15 +135,19 @@ async def health():
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await ws_manager.connect(websocket, session_id)
+    WEBSOCKET_CONNECTIONS.inc()
     try:
         while True:
             data = await websocket.receive_text()
             logger.info("WebSocket message received (session=%s): %s", session_id, data[:100])
-            response = await claude.send_message(session_id, data)
+            with MESSAGE_DURATION_SECONDS.labels(channel="websocket").time():
+                response = await claude.send_message(session_id, data)
+            MESSAGES_TOTAL.labels(channel="websocket", status="success").inc()
             logger.info("WebSocket response (session=%s): %s", session_id, response[:100])
             await ws_manager.send_message(response, websocket)
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, session_id)
+        WEBSOCKET_CONNECTIONS.dec()
 
 
 # --- Synology Chat webhook ---
@@ -141,7 +160,9 @@ async def synology_webhook(payload: dict):
     user_id = str(payload.get("user_id", "synology"))
     session_id = f"synology-{user_id}"
 
-    response = await claude.send_message(session_id, text)
+    with MESSAGE_DURATION_SECONDS.labels(channel="synology").time():
+        response = await claude.send_message(session_id, text)
+    MESSAGES_TOTAL.labels(channel="synology", status="success").inc()
 
     # Synology Chat expects: {"text": "response"}
     return {"text": response}
@@ -153,8 +174,10 @@ async def synology_webhook(payload: dict):
 async def startup():
     global discord_bot
 
-    # Log service availability
+    # Log service availability and set metrics
     log_service_status()
+    for name, available in get_available_services().items():
+        SERVICES_AVAILABLE.labels(service=name).set(1 if available else 0)
 
     # Channels - Discord
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()

@@ -14,6 +14,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from metrics import MONITOR_CHECKS_TOTAL, MONITOR_CHECK_DURATION_SECONDS, MONITOR_CHECK_PAUSED
 from services import is_monitor_check_available
 
 logger = logging.getLogger(__name__)
@@ -161,19 +162,24 @@ class Monitor:
         while True:
             # --- Pause while alert is active ---
             if self.is_check_paused(check.name):
+                MONITOR_CHECK_PAUSED.labels(check=check.name).set(1)
                 logger.debug("Check %s: paused (waiting for user acknowledgment)", check.name)
                 await asyncio.sleep(PAUSED_POLL_INTERVAL)
                 continue
+
+            MONITOR_CHECK_PAUSED.labels(check=check.name).set(0)
 
             # --- Run the check ---
             try:
                 logger.debug("Running check: %s", check.name)
                 session_id = f"{MONITOR_SESSION}-{check.name}"
-                response = await self.claude_runner.send_message(
-                    session_id, check.prompt
-                )
+                with MONITOR_CHECK_DURATION_SECONDS.labels(check=check.name).time():
+                    response = await self.claude_runner.send_message(
+                        session_id, check.prompt
+                    )
 
                 if response and not self._is_all_clear(response):
+                    MONITOR_CHECKS_TOTAL.labels(check=check.name, result="alert").inc()
                     # Issue detected → notify and pause until acknowledged
                     await self.notifier.notify_all(
                         f"🔔 **Monitoring - {check.name}**\n\n{response}\n\n"
@@ -182,6 +188,7 @@ class Monitor:
                     self._record_alert(check.name, response)
                     logger.info("Check %s: alert sent, check paused until acknowledged", check.name)
                 else:
+                    MONITOR_CHECKS_TOTAL.labels(check=check.name, result="clear").inc()
                     logger.debug("Check %s: all clear", check.name)
                     # Problem resolved → clear alert state
                     if check.name in self._alert_states:
@@ -192,6 +199,7 @@ class Monitor:
                 self.claude_runner.clear_session(session_id)
 
             except Exception as e:
+                MONITOR_CHECKS_TOTAL.labels(check=check.name, result="error").inc()
                 logger.error("Check %s failed: %s", check.name, e)
 
             await asyncio.sleep(check.interval_minutes * 60)

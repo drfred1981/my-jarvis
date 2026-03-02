@@ -7,6 +7,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 
+from metrics import ACTIVE_SESSIONS
 from services import get_active_services, get_active_mcp_config, get_allowed_tools_string
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class ClaudeRunner:
     def _get_or_create_session(self, session_id: str) -> ConversationSession:
         if session_id not in self.sessions:
             self.sessions[session_id] = ConversationSession(session_id=session_id)
+            ACTIVE_SESSIONS.inc()
         return self.sessions[session_id]
 
     def _get_mcp_config_path(self) -> str | None:
@@ -149,4 +151,5 @@ class ClaudeRunner:
 
     def clear_session(self, session_id: str) -> None:
         """Clear a conversation session."""
-        self.sessions.pop(session_id, None)
+        if self.sessions.pop(session_id, None) is not None:
+            ACTIVE_SESSIONS.dec()
