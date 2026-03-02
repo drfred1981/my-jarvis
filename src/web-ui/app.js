@@ -104,12 +104,12 @@
 
             ws.onopen = () => {
                 setStatus("Connecté", "connected");
-                // Keepalive ping every 30s to prevent ingress timeout
+                // Keepalive ping every 10s to prevent ingress timeout
                 pingInterval = setInterval(() => {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send("ping");
                     }
-                }, 30000);
+                }, 10000);
             };
 
             ws.onmessage = (event) => {

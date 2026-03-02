@@ -51,10 +51,16 @@ class DiscordBot:
                             message.channel.id, self.allowed_channels)
                 return
 
-            # Only respond to mentions or DMs
+            # Respond to:
+            # - All messages in allowed channels (if DISCORD_CHANNEL_IDS is set)
+            # - @mentions in any channel
+            # - DMs
             is_dm = isinstance(message.channel, discord.DMChannel)
             is_mention = self.client.user in message.mentions
-            if not is_dm and not is_mention:
+            is_allowed_channel = self.allowed_channels and message.channel.id in self.allowed_channels
+
+            if not is_dm and not is_mention and not is_allowed_channel:
+                logger.debug("Ignored: not a DM, mention, or allowed channel")
                 return
 
             # Clean up mention from message

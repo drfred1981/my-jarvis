@@ -10,7 +10,7 @@ import sys
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import make_asgi_app
 from pydantic import BaseModel
@@ -69,11 +69,48 @@ class MessageResponse(BaseModel):
 
 @app.get("/")
 async def root():
-    """Serve the web UI."""
-    index_path = os.path.join(WEB_UI_DIR, "index.html")
-    if os.path.isfile(index_path):
-        return FileResponse(index_path)
-    return {"status": "Jarvis is running", "version": "0.1.0"}
+    """Serve the web UI with inline CSS/JS (no caching issues)."""
+    css_path = os.path.join(WEB_UI_DIR, "style.css")
+    js_path = os.path.join(WEB_UI_DIR, "app.js")
+    if not os.path.isfile(css_path):
+        return {"status": "Jarvis is running", "version": "0.1.0"}
+
+    with open(css_path) as f:
+        css = f.read()
+    with open(js_path) as f:
+        js = f.read()
+
+    html = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jarvis</title>
+<style>{css}</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Jarvis</h1>
+    <span class="status" id="status">Connexion...</span>
+  </header>
+  <main id="chat">
+    <div id="messages"></div>
+  </main>
+  <footer>
+    <form id="input-form">
+      <textarea id="input" placeholder="Parle à Jarvis..." rows="1" autofocus></textarea>
+      <button type="submit" id="send-btn">Envoyer</button>
+    </form>
+  </footer>
+</div>
+<script>{js}</script>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=html,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.post("/api/chat", response_model=MessageResponse)
