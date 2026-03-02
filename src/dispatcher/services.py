@@ -25,6 +25,8 @@ SERVICE_REQUIREMENTS = {
     "music-assistant": {"type": "env", "vars": ["MUSIC_ASSISTANT_URL"]},
     "synology-router": {"type": "env", "vars": ["SRM_URL", "SRM_USER", "SRM_PASSWORD"]},
     "plex": {"type": "env", "vars": ["PLEX_URL", "PLEX_TOKEN"]},
+    "homebox": {"type": "env", "vars": ["HOMEBOX_URL", "HOMEBOX_USER", "HOMEBOX_PASSWORD"]},
+    "lubelog": {"type": "env", "vars": ["LUBELOG_URL", "LUBELOG_API_KEY"]},
 }
 
 # Monitor check -> required services mapping

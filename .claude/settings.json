@@ -20,7 +20,9 @@
       "mcp__karakeep__*",
       "mcp__music-assistant__*",
       "mcp__synology-router__*",
-      "mcp__plex__*"
+      "mcp__plex__*",
+      "mcp__homebox__*",
+      "mcp__lubelog__*"
     ]
   },
   "mcpServers": {
@@ -71,6 +73,14 @@
     "plex": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/plex/server.py"]
+    },
+    "homebox": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/homebox/server.py"]
+    },
+    "lubelog": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/lubelog/server.py"]
     }
   }
 }

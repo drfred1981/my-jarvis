@@ -86,6 +86,14 @@ Tu peux voir les appareils connectés, le trafic réseau, l'utilisation CPU/RAM 
 Tu as accès à Plex Media Server via les outils MCP `plex`.
 Tu peux lister les bibliothèques, voir les sessions actives (qui regarde quoi), rechercher des médias, voir les ajouts récents et les contenus "on deck", et obtenir les stats des bibliothèques.
 
+### Homebox (inventaire maison)
+Tu as accès à Homebox via les outils MCP `homebox`.
+Tu peux rechercher des objets dans l'inventaire, parcourir les emplacements et labels, consulter les statistiques, et suivre la maintenance des équipements.
+
+### LubeLogger (suivi véhicules)
+Tu as accès à LubeLogger via les outils MCP `lubelog`.
+Tu peux lister les véhicules, consulter les rappels de maintenance, les enregistrements de service/réparations/carburant, ajouter des relevés kilométriques et des pleins.
+
 ### Outils CLI disponibles
 Tu as accès aux outils suivants dans le container :
 - **kubectl**, **helm**, **flux** : gestion du cluster Kubernetes et GitOps
@@ -110,6 +118,8 @@ Le cluster contient entre autres :
 - FluxCD (GitOps)
 - Plex (média)
 - Synology Router (réseau)
+- Homebox (inventaire)
+- LubeLogger (véhicules)
 
 ## Règles
 - Toujours demander confirmation avant d'effectuer une action destructive sur le cluster

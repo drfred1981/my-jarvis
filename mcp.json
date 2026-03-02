@@ -47,6 +47,14 @@
     "plex": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/plex/server.py"]
+    },
+    "homebox": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/homebox/server.py"]
+    },
+    "lubelog": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/lubelog/server.py"]
     }
   }
 }
