@@ -16,12 +16,19 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+# Configure logging to stderr (stdout is reserved for MCP protocol)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [git-mcp] %(levelname)s %(message)s",
+    stream=sys.stderr,
+)
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("git")
@@ -40,15 +47,20 @@ def _load_repos() -> dict[str, str]:
     """Load repos from GIT_REPOS env var."""
     repos = {}
     repos_json = os.getenv("GIT_REPOS", "")
+    logger.info("GIT_REPOS env var: %s", repos_json[:200] if repos_json else "(empty)")
     if repos_json:
         try:
             repos.update(json.loads(repos_json))
-        except json.JSONDecodeError:
-            logger.error("Invalid GIT_REPOS JSON: %s", repos_json)
+            logger.info("Parsed %d repos: %s", len(repos), list(repos.keys()))
+        except json.JSONDecodeError as e:
+            logger.error("Invalid GIT_REPOS JSON: %s (error: %s)", repos_json, e)
+    else:
+        logger.warning("GIT_REPOS env var is empty or not set")
     return repos
 
 
 REPOS = _load_repos()
+logger.info("Cache dir: %s (exists: %s)", _CACHE_DIR, os.path.exists(_CACHE_DIR))
 
 
 def _auth_url(url: str) -> str:
@@ -362,20 +374,21 @@ def _repo_not_found_error(name: str) -> str:
 
 def _clone_all_repos():
     """Clone all configured repos that aren't already cached."""
+    logger.info("Starting initial clone of %d repos to %s", len(REPOS), _CACHE_DIR)
+    os.makedirs(_CACHE_DIR, exist_ok=True)
     for name, url in REPOS.items():
         try:
             repo_dir = _get_repo_dir(name)
-            if repo_dir.exists() and (repo_dir / ".git").exists():
-                logger.info("Repo already cached: %s", name)
-            else:
-                logger.info("Cloning repo: %s ...", name)
+            cached = repo_dir.exists() and (repo_dir / ".git").exists()
+            logger.info("Repo %s: cached=%s, dir=%s", name, cached, repo_dir)
             err = _ensure_cloned(name, url)
             if err:
                 logger.error("Failed to clone/update %s: %s", name, err)
             else:
-                logger.info("Repo ready: %s", name)
+                logger.info("Repo ready: %s (%s)", name, repo_dir)
         except Exception as e:
-            logger.error("Error cloning %s: %s", name, e)
+            logger.error("Error cloning %s: %s", name, e, exc_info=True)
+    logger.info("Initial clone complete")
 
 
 def _refresh_all_repos():
@@ -397,11 +410,14 @@ def _refresh_all_repos():
 
 # Start background thread (clone at startup + periodic refresh)
 if REPOS:
-    logger.info("Git MCP: %d repos configured: %s", len(REPOS), list(REPOS.keys()))
-    _refresh_thread = threading.Thread(target=_refresh_all_repos, daemon=True)
+    logger.info("Git MCP starting: %d repos configured: %s", len(REPOS), list(REPOS.keys()))
+    logger.info("Cache directory: %s", _CACHE_DIR)
+    logger.info("Refresh interval: %ds", _REFRESH_INTERVAL)
+    _refresh_thread = threading.Thread(target=_refresh_all_repos, daemon=True, name="git-refresh")
     _refresh_thread.start()
+    logger.info("Background refresh thread started")
 else:
-    logger.warning("Git MCP: no repos configured (GIT_REPOS env var empty)")
+    logger.warning("Git MCP: no repos configured (GIT_REPOS env var is empty or not set)")
 
 
 if __name__ == "__main__":
