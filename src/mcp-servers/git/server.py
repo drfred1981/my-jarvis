@@ -105,7 +105,11 @@ def _ensure_cloned(name: str, url: str, branch: str = "") -> str | None:
             logger.warning("Rebase failed for %s, reset to origin/%s", name, target_branch)
         return None
     else:
-        # Fresh clone
+        # Fresh clone — clean up any partial/failed clone first
+        if repo_dir.exists():
+            import shutil
+            shutil.rmtree(repo_dir, ignore_errors=True)
+            logger.info("Removed partial clone dir for %s", name)
         repo_dir.mkdir(parents=True, exist_ok=True)
         cmd = ["git", "clone"]
         if branch:
