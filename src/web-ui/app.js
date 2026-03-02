@@ -6,11 +6,7 @@
     const sendBtn = document.getElementById("send-btn");
 
     const sessionId = crypto.randomUUID();
-    let ws = null;
-    let reconnectTimer = null;
-    let pingInterval = null;
 
-    // Escape HTML to prevent DOM corruption from Claude responses
     function escapeHtml(text) {
         return text
             .replace(/&/g, '&amp;')
@@ -19,7 +15,6 @@
             .replace(/"/g, '&quot;');
     }
 
-    // Simple markdown rendering (bold, italic, code, code blocks, links)
     function renderMarkdown(text) {
         text = escapeHtml(text);
         return text
@@ -72,72 +67,12 @@
         if (el) el.style.display = "none";
     }
 
-    function setStatus(text, state) {
-        statusEl.textContent = text;
-        statusEl.className = `status ${state}`;
-    }
-
     function setLoading(loading) {
         sendBtn.disabled = loading;
         inputEl.disabled = loading;
         sendBtn.textContent = loading ? "..." : "Envoyer";
         if (loading) showTyping(); else hideTyping();
     }
-
-    // --- WebSocket (push notifications only, optional) ---
-
-    function connectWs() {
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
-        }
-        if (pingInterval) {
-            clearInterval(pingInterval);
-            pingInterval = null;
-        }
-
-        const proto = location.protocol === "https:" ? "wss:" : "ws:";
-        const url = `${proto}//${location.host}/ws/${sessionId}`;
-
-        try {
-            ws = new WebSocket(url);
-
-            ws.onopen = () => {
-                setStatus("Connecté", "connected");
-                // Keepalive ping every 10s to prevent ingress timeout
-                pingInterval = setInterval(() => {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send("ping");
-                    }
-                }, 10000);
-            };
-
-            ws.onmessage = (event) => {
-                // Push notifications from monitoring
-                if (event.data && event.data !== "pong") {
-                    addMessage(event.data, "jarvis");
-                }
-            };
-
-            ws.onclose = () => {
-                if (pingInterval) {
-                    clearInterval(pingInterval);
-                    pingInterval = null;
-                }
-                // Silently reconnect - no status change, no page impact
-                reconnectTimer = setTimeout(connectWs, 5000);
-            };
-
-            ws.onerror = () => {
-                // Let onclose handle reconnection
-            };
-        } catch (e) {
-            // WebSocket not available - REST still works fine
-            setStatus("Connecté (REST)", "connected");
-        }
-    }
-
-    // --- REST API (primary method for sending messages) ---
 
     async function sendMessage(message) {
         if (!message.trim()) return;
@@ -173,8 +108,6 @@
         }
     }
 
-    // --- Event handlers ---
-
     formEl.addEventListener("submit", (e) => {
         e.preventDefault();
         const msg = inputEl.value;
@@ -188,7 +121,6 @@
         inputEl.style.height = Math.min(inputEl.scrollHeight, 150) + "px";
     });
 
-    // Enter to send, Shift+Enter for newline
     inputEl.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -196,6 +128,6 @@
         }
     });
 
-    setStatus("Connecté", "connected");
-    connectWs();
+    statusEl.textContent = "Connecté";
+    statusEl.className = "status connected";
 })();
