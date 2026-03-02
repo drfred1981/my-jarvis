@@ -66,18 +66,33 @@ class DiscordBot:
 
             session_id = f"discord-{message.author.id}"
 
-            async with message.channel.typing():
-                with MESSAGE_DURATION_SECONDS.labels(channel="discord").time():
-                    response = await self.claude_runner.send_message(session_id, content)
-            MESSAGES_TOTAL.labels(channel="discord", status="success").inc()
+            try:
+                async with message.channel.typing():
+                    logger.info("Sending to Claude Code (session=%s)...", session_id)
+                    with MESSAGE_DURATION_SECONDS.labels(channel="discord").time():
+                        response = await self.claude_runner.send_message(session_id, content)
+                    logger.info("Claude Code response (session=%s, len=%d): %s",
+                                session_id, len(response), response[:200])
 
-            # Discord has a 2000 char limit
-            if len(response) > 1900:
-                chunks = [response[i:i + 1900] for i in range(0, len(response), 1900)]
-                for chunk in chunks:
-                    await message.reply(chunk)
-            else:
-                await message.reply(response)
+                MESSAGES_TOTAL.labels(channel="discord", status="success").inc()
+
+                # Discord has a 2000 char limit
+                if len(response) > 1900:
+                    chunks = [response[i:i + 1900] for i in range(0, len(response), 1900)]
+                    for chunk in chunks:
+                        await message.reply(chunk)
+                else:
+                    await message.reply(response)
+
+                logger.info("Discord reply sent to %s", message.author)
+
+            except Exception as e:
+                MESSAGES_TOTAL.labels(channel="discord", status="error").inc()
+                logger.error("Discord message handling failed: %s", e, exc_info=True)
+                try:
+                    await message.reply(f"Erreur: {e}")
+                except Exception:
+                    pass
 
     async def start_background(self):
         """Start the Discord bot in a background task."""
