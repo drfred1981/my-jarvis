@@ -24,7 +24,7 @@ MCP_CONFIG = os.path.join(JARVIS_PROJECT_DIR, "mcp.json")
 MAX_BUDGET = os.environ.get("JARVIS_MAX_BUDGET", "1.00")
 
 # Max agentic turns per request
-MAX_TURNS = os.environ.get("JARVIS_MAX_TURNS", "10")
+MAX_TURNS = os.environ.get("JARVIS_MAX_TURNS", "25")
 
 
 @dataclass
@@ -121,24 +121,23 @@ class ClaudeRunner:
             if stderr_text:
                 logger.info("Claude Code stderr: %s", stderr_text[:500])
 
-            if proc.returncode != 0:
-                logger.error("Claude Code error (rc=%d): %s", proc.returncode, stderr_text)
-                return f"Erreur Claude Code: {stderr_text}"
-
             output = stdout.decode().strip()
 
+            if proc.returncode != 0 and not output:
+                logger.error("Claude Code error (rc=%d): %s", proc.returncode, stderr_text)
+                return f"Erreur Claude Code: {stderr_text or 'processus terminé sans réponse'}"
+
+            response_text = self._parse_claude_output(output, stderr_text)
+
+            # Capture session ID for conversation continuity
             try:
                 result = json.loads(output)
-                response_text = result.get("result", output)
-
-                # Capture session ID for conversation continuity
                 claude_sid = result.get("session_id")
                 if claude_sid:
                     async with self._lock:
                         session.claude_session_id = claude_sid
-
-            except json.JSONDecodeError:
-                response_text = output
+            except (json.JSONDecodeError, AttributeError):
+                pass
 
             return response_text
 
@@ -148,6 +147,50 @@ class ClaudeRunner:
         except Exception as e:
             logger.error("Claude Code exception: %s", e)
             return f"Erreur interne: {e}"
+
+    @staticmethod
+    def _parse_claude_output(output: str, stderr_text: str = "") -> str:
+        """Parse Claude Code JSON output into a user-friendly response."""
+        if not output:
+            return f"Erreur Claude Code: {stderr_text or 'aucune réponse'}"
+
+        try:
+            result = json.loads(output)
+        except json.JSONDecodeError:
+            # Not JSON, return raw output
+            return output
+
+        # Extract the text response if present
+        response_text = result.get("result", "")
+
+        subtype = result.get("subtype", "")
+        is_error = result.get("is_error", False)
+
+        if response_text:
+            # Got a response, but maybe hit limits
+            if subtype == "error_max_turns":
+                return response_text + "\n\n_(Réponse partielle : limite de tours atteinte)_"
+            return response_text
+
+        # No result field — handle known error subtypes
+        if subtype == "error_max_turns":
+            cost = result.get("total_cost_usd", 0)
+            turns = result.get("num_turns", 0)
+            logger.warning("Claude hit max turns (%d, cost=$%.2f)", turns, cost)
+            return (
+                "Désolé, la tâche était trop complexe et j'ai atteint la limite de tours "
+                f"({turns} tours, ${cost:.2f}). "
+                "Essaie de reformuler avec une demande plus ciblée."
+            )
+
+        if is_error:
+            errors = result.get("errors", [])
+            error_msg = "; ".join(str(e) for e in errors) if errors else "erreur inconnue"
+            return f"Erreur Claude Code: {error_msg}"
+
+        # Fallback — don't dump raw JSON to users
+        logger.warning("Unexpected Claude output format: %s", output[:200])
+        return "Désolé, je n'ai pas pu traiter cette demande. Réessaie."
 
     def clear_session(self, session_id: str) -> None:
         """Clear a conversation session."""
