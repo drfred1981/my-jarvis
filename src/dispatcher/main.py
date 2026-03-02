@@ -80,9 +80,22 @@ async def clear_session(session_id: str):
     return {"status": "cleared", "session_id": session_id}
 
 
+@app.get("/api/alerts")
+async def list_alerts():
+    """List active monitoring alerts and their status."""
+    alerts = {}
+    for name, state in monitor._alert_states.items():
+        alerts[name] = {
+            "paused": not state.acknowledged,
+            "acknowledged": state.acknowledged,
+            "sent_at": state.sent_at.isoformat() if state.sent_at else None,
+        }
+    return {"alerts": alerts}
+
+
 @app.post("/api/alerts/{check_name}/ack")
 async def acknowledge_alert(check_name: str):
-    """Acknowledge a monitoring alert to stop it from repeating."""
+    """Acknowledge a monitoring alert to resume the check."""
     if monitor.acknowledge_alert(check_name):
         return {"status": "acknowledged", "check": check_name}
     return {"status": "not_found", "check": check_name}

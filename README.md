@@ -117,7 +117,7 @@ Jarvis est accessible sur http://localhost:8080.
    - Activer **Message Content Intent** dans Privileged Gateway Intents
 4. Onglet **OAuth2** > URL Generator :
    - Scopes : `bot`
-   - Bot Permissions : `Send Messages`, `Read Message History`, `Read Messages/View Channels`
+   - Bot Permissions : `Send Messages`, `Read Message History`, `View Channels`
    - Copier l'URL et l'ouvrir pour inviter le bot dans votre serveur
 5. (Optionnel) Restreindre à certains canaux en mettant les IDs dans `DISCORD_CHANNEL_IDS`
 

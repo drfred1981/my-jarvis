@@ -3,14 +3,15 @@
 Periodically sends check prompts to Claude Code and dispatches
 alerts to all configured channels when issues are detected.
 Only runs checks for services that are actually configured.
-Avoids repeating the same alerts until the user acknowledges them.
+Pauses checks entirely when an alert is active — resumes only
+after the user acknowledges the alert.
 """
 
 import asyncio
 import hashlib
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from services import is_monitor_check_available
@@ -20,8 +21,8 @@ logger = logging.getLogger(__name__)
 # Monitoring session (separate from user conversations)
 MONITOR_SESSION = "jarvis-monitor"
 
-# Don't re-send the same alert more than once per this duration (hours)
-ALERT_COOLDOWN_HOURS = int(os.getenv("JARVIS_ALERT_COOLDOWN_HOURS", "6"))
+# How often to check if an alert has been acknowledged (seconds)
+PAUSED_POLL_INTERVAL = 60
 
 
 @dataclass
@@ -126,34 +127,10 @@ class Monitor:
             return True
         return False
 
-    def _should_notify(self, check_name: str, response: str) -> bool:
-        """Decide if we should send this alert or suppress it as a duplicate."""
-        fingerprint = self._make_fingerprint(response)
+    def is_check_paused(self, check_name: str) -> bool:
+        """Return True if this check has an active unacknowledged alert."""
         state = self._alert_states.get(check_name)
-
-        if not state:
-            # First alert for this check
-            return True
-
-        # Different issue than last time → always notify
-        if state.fingerprint != fingerprint:
-            return True
-
-        # Same issue but user acknowledged it → it came back, notify again
-        if state.acknowledged:
-            return True
-
-        # Same issue, not acknowledged → check cooldown
-        if state.sent_at:
-            hours_since = (datetime.now(timezone.utc) - state.sent_at).total_seconds() / 3600
-            if hours_since >= ALERT_COOLDOWN_HOURS:
-                # Escalation: re-send after cooldown as a reminder
-                logger.info("Alert cooldown expired for %s, re-sending", check_name)
-                return True
-
-        # Suppress duplicate
-        logger.info("Alert suppressed for %s (same issue, not acknowledged)", check_name)
-        return False
+        return state is not None and not state.acknowledged
 
     def _record_alert(self, check_name: str, response: str):
         """Record that an alert was sent."""
@@ -172,11 +149,23 @@ class Monitor:
         return hashlib.md5(normalized.encode()).hexdigest()
 
     async def _run_check_loop(self, check: Check):
-        """Run a single check on a loop."""
+        """Run a single check on a loop.
+
+        When an alert is active and unacknowledged, the check is fully
+        paused — no Claude calls, no system queries. It resumes only
+        after the user acknowledges the alert via the API.
+        """
         # Wait before first check to let everything initialize
         await asyncio.sleep(60)
 
         while True:
+            # --- Pause while alert is active ---
+            if self.is_check_paused(check.name):
+                logger.debug("Check %s: paused (waiting for user acknowledgment)", check.name)
+                await asyncio.sleep(PAUSED_POLL_INTERVAL)
+                continue
+
+            # --- Run the check ---
             try:
                 logger.debug("Running check: %s", check.name)
                 session_id = f"{MONITOR_SESSION}-{check.name}"
@@ -184,13 +173,14 @@ class Monitor:
                     session_id, check.prompt
                 )
 
-                # Only notify if there's something to report (not "RAS")
                 if response and not self._is_all_clear(response):
-                    if self._should_notify(check.name, response):
-                        await self.notifier.notify_all(
-                            f"🔔 **Monitoring - {check.name}**\n\n{response}"
-                        )
-                        self._record_alert(check.name, response)
+                    # Issue detected → notify and pause until acknowledged
+                    await self.notifier.notify_all(
+                        f"🔔 **Monitoring - {check.name}**\n\n{response}\n\n"
+                        f"_Check en pause. Acquitter avec `POST /api/alerts/{check.name}/ack`_"
+                    )
+                    self._record_alert(check.name, response)
+                    logger.info("Check %s: alert sent, check paused until acknowledged", check.name)
                 else:
                     logger.debug("Check %s: all clear", check.name)
                     # Problem resolved → clear alert state
