@@ -130,21 +130,21 @@ async def health():
     }
 
 
-# --- WebSocket for real-time chat ---
+# --- WebSocket for push notifications only ---
 
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    """WebSocket for push notifications (monitoring alerts, etc.).
+
+    Messages should be sent via POST /api/chat, not WebSocket.
+    This endpoint only keeps the connection alive and pushes server events.
+    """
     await ws_manager.connect(websocket, session_id)
     WEBSOCKET_CONNECTIONS.inc()
     try:
         while True:
-            data = await websocket.receive_text()
-            logger.info("WebSocket message received (session=%s): %s", session_id, data[:100])
-            with MESSAGE_DURATION_SECONDS.labels(channel="websocket").time():
-                response = await claude.send_message(session_id, data)
-            MESSAGES_TOTAL.labels(channel="websocket", status="success").inc()
-            logger.info("WebSocket response (session=%s): %s", session_id, response[:100])
-            await ws_manager.send_message(response, websocket)
+            # Keep connection alive by reading (ignore any incoming text)
+            await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, session_id)
         WEBSOCKET_CONNECTIONS.dec()
