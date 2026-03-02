@@ -23,6 +23,8 @@ SERVICE_REQUIREMENTS = {
     "immich": {"type": "env", "vars": ["IMMICH_API_KEY"]},
     "karakeep": {"type": "env", "vars": ["KARAKEEP_API_KEY"]},
     "music-assistant": {"type": "env", "vars": ["MUSIC_ASSISTANT_URL"]},
+    "synology-router": {"type": "env", "vars": ["SRM_URL", "SRM_USER", "SRM_PASSWORD"]},
+    "plex": {"type": "env", "vars": ["PLEX_URL", "PLEX_TOKEN"]},
 }
 
 # Monitor check -> required services mapping

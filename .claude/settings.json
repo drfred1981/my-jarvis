@@ -18,7 +18,9 @@
       "mcp__miniflux__*",
       "mcp__immich__*",
       "mcp__karakeep__*",
-      "mcp__music-assistant__*"
+      "mcp__music-assistant__*",
+      "mcp__synology-router__*",
+      "mcp__plex__*"
     ]
   },
   "mcpServers": {
@@ -61,6 +63,14 @@
     "music-assistant": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/music-assistant/server.py"]
+    },
+    "synology-router": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/synology-router/server.py"]
+    },
+    "plex": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/plex/server.py"]
     }
   }
 }
