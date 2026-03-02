@@ -7,13 +7,17 @@ Manages multiple git repositories independently:
 
 Repos are configured via GIT_REPOS env var:
   GIT_REPOS='{"my-jarvis":"https://github.com/user/my-jarvis.git","infra":"https://github.com/user/infra.git"}'
+
+Repos are cloned to $JARVIS_PROJECT_DIR/git-cache/ (persistent volume)
+and refreshed periodically via pull --rebase.
 """
 
 import json
 import logging
 import os
 import subprocess
-import tempfile
+import threading
+import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -24,8 +28,12 @@ mcp = FastMCP("git")
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
-# Persistent clone cache to avoid re-cloning every call
-_CACHE_DIR = os.path.join(tempfile.gettempdir(), "jarvis-git-cache")
+# Persistent clone cache on the mounted volume (survives restarts)
+_PROJECT_DIR = os.environ.get("JARVIS_PROJECT_DIR", "/home/jarvis")
+_CACHE_DIR = os.path.join(_PROJECT_DIR, "git-cache")
+
+# How often to auto-refresh repos (seconds)
+_REFRESH_INTERVAL = int(os.getenv("GIT_REFRESH_INTERVAL", "300"))  # 5 min
 
 
 def _load_repos() -> dict[str, str]:
@@ -61,7 +69,12 @@ def _ensure_cloned(name: str, url: str, branch: str = "") -> str | None:
     auth_url = _auth_url(url)
 
     if repo_dir.exists() and (repo_dir / ".git").exists():
-        # Pull latest
+        # Update remote URL in case token changed
+        subprocess.run(
+            ["git", "-C", str(repo_dir), "remote", "set-url", "origin", auth_url],
+            capture_output=True, text=True, timeout=10,
+        )
+        # Fetch latest
         result = subprocess.run(
             ["git", "-C", str(repo_dir), "fetch", "--all", "--prune"],
             capture_output=True, text=True, timeout=60,
@@ -74,10 +87,22 @@ def _ensure_cloned(name: str, url: str, branch: str = "") -> str | None:
             ["git", "-C", str(repo_dir), "checkout", target_branch],
             capture_output=True, text=True, timeout=30,
         )
-        subprocess.run(
-            ["git", "-C", str(repo_dir), "pull", "--ff-only"],
+        # Rebase to keep a clean linear history
+        result = subprocess.run(
+            ["git", "-C", str(repo_dir), "pull", "--rebase"],
             capture_output=True, text=True, timeout=60,
         )
+        if result.returncode != 0:
+            # Abort failed rebase and reset to remote
+            subprocess.run(
+                ["git", "-C", str(repo_dir), "rebase", "--abort"],
+                capture_output=True, text=True, timeout=10,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo_dir), "reset", "--hard", f"origin/{target_branch}"],
+                capture_output=True, text=True, timeout=10,
+            )
+            logger.warning("Rebase failed for %s, reset to origin/%s", name, target_branch)
         return None
     else:
         # Fresh clone
@@ -329,6 +354,31 @@ def _repo_not_found_error(name: str) -> str:
         f"Repository '{name}' not found. Available repos:\n"
         + json.dumps(list(REPOS.keys()), indent=2)
     )
+
+
+def _refresh_all_repos():
+    """Background thread: periodically pull --rebase all configured repos."""
+    # Wait before first refresh to let the server start
+    time.sleep(30)
+    while True:
+        for name, url in REPOS.items():
+            try:
+                repo_dir = _get_repo_dir(name)
+                if repo_dir.exists() and (repo_dir / ".git").exists():
+                    err = _ensure_cloned(name, url)
+                    if err:
+                        logger.warning("Auto-refresh failed for %s: %s", name, err)
+                    else:
+                        logger.debug("Auto-refreshed repo: %s", name)
+            except Exception as e:
+                logger.warning("Auto-refresh error for %s: %s", name, e)
+        time.sleep(_REFRESH_INTERVAL)
+
+
+# Start background refresh thread
+if REPOS:
+    _refresh_thread = threading.Thread(target=_refresh_all_repos, daemon=True)
+    _refresh_thread.start()
 
 
 if __name__ == "__main__":
