@@ -9,8 +9,19 @@
     let ws = null;
     let reconnectTimer = null;
 
+    // Escape HTML to prevent DOM corruption from Claude responses
+    function escapeHtml(text) {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
     // Simple markdown rendering (bold, italic, code, code blocks, links)
     function renderMarkdown(text) {
+        // First escape HTML, then apply markdown
+        text = escapeHtml(text);
         return text
             .replace(/```(\w*)\n([\s\S]*?)```/g,
                 '<pre><code class="lang-$1">$2</code></pre>')
@@ -116,20 +127,29 @@
         setLoading(true);
 
         try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
             const resp = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message, session_id: sessionId }),
+                signal: controller.signal,
             });
+            clearTimeout(timeout);
 
             if (!resp.ok) {
-                throw new Error(`HTTP ${resp.status}`);
+                const text = await resp.text().catch(() => "");
+                throw new Error(`HTTP ${resp.status}${text ? ": " + text.slice(0, 200) : ""}`);
             }
 
             const data = await resp.json();
             addMessage(data.response, "jarvis");
         } catch (err) {
-            addMessage(`Erreur: ${err.message}`, "jarvis");
+            const msg = err.name === "AbortError"
+                ? "Timeout: pas de réponse après 5 minutes."
+                : `Erreur: ${err.message}`;
+            addMessage(msg, "jarvis");
         } finally {
             setLoading(false);
         }
