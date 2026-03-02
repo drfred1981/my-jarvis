@@ -356,29 +356,48 @@ def _repo_not_found_error(name: str) -> str:
     )
 
 
+def _clone_all_repos():
+    """Clone all configured repos that aren't already cached."""
+    for name, url in REPOS.items():
+        try:
+            repo_dir = _get_repo_dir(name)
+            if repo_dir.exists() and (repo_dir / ".git").exists():
+                logger.info("Repo already cached: %s", name)
+            else:
+                logger.info("Cloning repo: %s ...", name)
+            err = _ensure_cloned(name, url)
+            if err:
+                logger.error("Failed to clone/update %s: %s", name, err)
+            else:
+                logger.info("Repo ready: %s", name)
+        except Exception as e:
+            logger.error("Error cloning %s: %s", name, e)
+
+
 def _refresh_all_repos():
     """Background thread: periodically pull --rebase all configured repos."""
-    # Wait before first refresh to let the server start
-    time.sleep(30)
+    # Initial clone of all repos
+    _clone_all_repos()
     while True:
+        time.sleep(_REFRESH_INTERVAL)
         for name, url in REPOS.items():
             try:
-                repo_dir = _get_repo_dir(name)
-                if repo_dir.exists() and (repo_dir / ".git").exists():
-                    err = _ensure_cloned(name, url)
-                    if err:
-                        logger.warning("Auto-refresh failed for %s: %s", name, err)
-                    else:
-                        logger.debug("Auto-refreshed repo: %s", name)
+                err = _ensure_cloned(name, url)
+                if err:
+                    logger.warning("Auto-refresh failed for %s: %s", name, err)
+                else:
+                    logger.debug("Auto-refreshed repo: %s", name)
             except Exception as e:
                 logger.warning("Auto-refresh error for %s: %s", name, e)
-        time.sleep(_REFRESH_INTERVAL)
 
 
-# Start background refresh thread
+# Start background thread (clone at startup + periodic refresh)
 if REPOS:
+    logger.info("Git MCP: %d repos configured: %s", len(REPOS), list(REPOS.keys()))
     _refresh_thread = threading.Thread(target=_refresh_all_repos, daemon=True)
     _refresh_thread.start()
+else:
+    logger.warning("Git MCP: no repos configured (GIT_REPOS env var empty)")
 
 
 if __name__ == "__main__":
