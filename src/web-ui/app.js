@@ -12,18 +12,12 @@
     // Simple markdown rendering (bold, italic, code, code blocks, links)
     function renderMarkdown(text) {
         return text
-            // Code blocks (``` ... ```)
             .replace(/```(\w*)\n([\s\S]*?)```/g,
                 '<pre><code class="lang-$1">$2</code></pre>')
-            // Inline code
             .replace(/`([^`]+)`/g, '<code>$1</code>')
-            // Bold
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            // Italic
             .replace(/\*(.+?)\*/g, '<em>$1</em>')
-            // Links
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-            // Line breaks
             .replace(/\n/g, '<br>');
     }
 
@@ -79,44 +73,59 @@
         if (loading) showTyping(); else hideTyping();
     }
 
-    function connect() {
+    // --- WebSocket (for push notifications from monitoring, not for sending) ---
+
+    function connectWs() {
         const proto = location.protocol === "https:" ? "wss:" : "ws:";
         const url = `${proto}//${location.host}/ws/${sessionId}`;
 
-        ws = new WebSocket(url);
+        try {
+            ws = new WebSocket(url);
 
-        ws.onopen = () => {
-            setStatus("Connecté", "connected");
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
-        };
+            ws.onopen = () => {
+                setStatus("Connecté", "connected");
+                if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }
+            };
 
-        ws.onmessage = (event) => {
-            setLoading(false);
-            addMessage(event.data, "jarvis");
-        };
+            ws.onmessage = (event) => {
+                // Push notifications from monitoring or other sources
+                addMessage(event.data, "jarvis");
+            };
 
-        ws.onclose = () => {
-            setStatus("Déconnecté", "error");
-            setLoading(false);
-            reconnectTimer = setTimeout(connect, 3000);
-        };
+            ws.onclose = () => {
+                setStatus("Reconnexion...", "error");
+                reconnectTimer = setTimeout(connectWs, 5000);
+            };
 
-        ws.onerror = () => {
-            setStatus("Erreur", "error");
-            ws.close();
-        };
+            ws.onerror = () => {
+                ws.close();
+            };
+        } catch (e) {
+            setStatus("Connecté (REST)", "connected");
+        }
     }
 
-    async function sendViaRest(message) {
+    // --- REST API (primary method for sending messages) ---
+
+    async function sendMessage(message) {
+        if (!message.trim()) return;
+        addMessage(message, "user");
+        setLoading(true);
+
         try {
             const resp = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message, session_id: sessionId }),
             });
+
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+
             const data = await resp.json();
             addMessage(data.response, "jarvis");
         } catch (err) {
@@ -126,24 +135,14 @@
         }
     }
 
-    function send(message) {
-        if (!message.trim()) return;
-        addMessage(message, "user");
-        setLoading(true);
-
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(message);
-        } else {
-            sendViaRest(message);
-        }
-    }
+    // --- Event handlers ---
 
     formEl.addEventListener("submit", (e) => {
         e.preventDefault();
         const msg = inputEl.value;
         inputEl.value = "";
         inputEl.style.height = "auto";
-        send(msg);
+        sendMessage(msg);
     });
 
     inputEl.addEventListener("input", () => {
@@ -159,5 +158,6 @@
         }
     });
 
-    connect();
+    setStatus("Connecté", "connected");
+    connectWs();
 })();

@@ -67,7 +67,9 @@ async def root():
 @app.post("/api/chat", response_model=MessageResponse)
 async def chat(req: MessageRequest):
     """Send a message to Jarvis and get a response."""
+    logger.info("REST /api/chat (session=%s): %s", req.session_id, req.message[:100])
     response = await claude.send_message(req.session_id, req.message)
+    logger.info("REST response (session=%s): %s", req.session_id, response[:100])
     return MessageResponse(response=response, session_id=req.session_id)
 
 
