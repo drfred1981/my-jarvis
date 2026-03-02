@@ -8,6 +8,7 @@
     const sessionId = crypto.randomUUID();
     let ws = null;
     let reconnectTimer = null;
+    let pingInterval = null;
 
     // Escape HTML to prevent DOM corruption from Claude responses
     function escapeHtml(text) {
@@ -20,7 +21,6 @@
 
     // Simple markdown rendering (bold, italic, code, code blocks, links)
     function renderMarkdown(text) {
-        // First escape HTML, then apply markdown
         text = escapeHtml(text);
         return text
             .replace(/```(\w*)\n([\s\S]*?)```/g,
@@ -84,9 +84,18 @@
         if (loading) showTyping(); else hideTyping();
     }
 
-    // --- WebSocket (for push notifications from monitoring, not for sending) ---
+    // --- WebSocket (push notifications only, optional) ---
 
     function connectWs() {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        if (pingInterval) {
+            clearInterval(pingInterval);
+            pingInterval = null;
+        }
+
         const proto = location.protocol === "https:" ? "wss:" : "ws:";
         const url = `${proto}//${location.host}/ws/${sessionId}`;
 
@@ -95,26 +104,35 @@
 
             ws.onopen = () => {
                 setStatus("Connecté", "connected");
-                if (reconnectTimer) {
-                    clearTimeout(reconnectTimer);
-                    reconnectTimer = null;
-                }
+                // Keepalive ping every 30s to prevent ingress timeout
+                pingInterval = setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send("ping");
+                    }
+                }, 30000);
             };
 
             ws.onmessage = (event) => {
-                // Push notifications from monitoring or other sources
-                addMessage(event.data, "jarvis");
+                // Push notifications from monitoring
+                if (event.data && event.data !== "pong") {
+                    addMessage(event.data, "jarvis");
+                }
             };
 
             ws.onclose = () => {
-                setStatus("Reconnexion...", "error");
+                if (pingInterval) {
+                    clearInterval(pingInterval);
+                    pingInterval = null;
+                }
+                // Silently reconnect - no status change, no page impact
                 reconnectTimer = setTimeout(connectWs, 5000);
             };
 
             ws.onerror = () => {
-                ws.close();
+                // Let onclose handle reconnection
             };
         } catch (e) {
+            // WebSocket not available - REST still works fine
             setStatus("Connecté (REST)", "connected");
         }
     }

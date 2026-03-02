@@ -1,5 +1,8 @@
 name: Build and Push Docker Image
 on:
+  push:
+    branches:
+      - main
   create:
     tags:
       - '*'
@@ -21,11 +24,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Récupère le nom du tag à partir de la référence
-      - name: Get tag name
+
+      - name: Determine image tag
         id: tag
         run: |
-          echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=latest" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -37,5 +44,6 @@ jobs:
           file: docker/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}/jarvis:${{ steps.tag.outputs.name }}
+
       - name: Check image
-        run: echo "Image ghcr.io/${{ github.repository }}/jarvis:${{ steps.tag.outputs.name }} a été poussée avec succès."
+        run: echo "Image ghcr.io/${{ github.repository }}/jarvis:${{ steps.tag.outputs.name }} pushed."
