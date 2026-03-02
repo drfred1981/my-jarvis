@@ -80,6 +80,14 @@ async def clear_session(session_id: str):
     return {"status": "cleared", "session_id": session_id}
 
 
+@app.post("/api/alerts/{check_name}/ack")
+async def acknowledge_alert(check_name: str):
+    """Acknowledge a monitoring alert to stop it from repeating."""
+    if monitor.acknowledge_alert(check_name):
+        return {"status": "acknowledged", "check": check_name}
+    return {"status": "not_found", "check": check_name}
+
+
 @app.get("/api/health")
 async def health():
     services = get_available_services()
