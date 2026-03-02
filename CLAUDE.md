@@ -86,6 +86,10 @@ Tu peux voir les appareils connectés, le trafic réseau, l'utilisation CPU/RAM 
 Tu as accès à Plex Media Server via les outils MCP `plex`.
 Tu peux lister les bibliothèques, voir les sessions actives (qui regarde quoi), rechercher des médias, voir les ajouts récents et les contenus "on deck", et obtenir les stats des bibliothèques.
 
+### Gatus (status page / health checks)
+Tu as accès à Gatus via les outils MCP `gatus`.
+Tu peux voir le statut de tous les endpoints monitorés (up/down), les uptimes, les temps de réponse, l'historique, et identifier les services dégradés.
+
 ### Homebox (inventaire maison)
 Tu as accès à Homebox via les outils MCP `homebox`.
 Tu peux rechercher des objets dans l'inventaire, parcourir les emplacements et labels, consulter les statistiques, et suivre la maintenance des équipements.

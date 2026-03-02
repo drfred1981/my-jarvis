@@ -27,6 +27,7 @@ SERVICE_REQUIREMENTS = {
     "plex": {"type": "env", "vars": ["PLEX_URL", "PLEX_TOKEN"]},
     "homebox": {"type": "env", "vars": ["HOMEBOX_URL", "HOMEBOX_USER", "HOMEBOX_PASSWORD"]},
     "lubelog": {"type": "env", "vars": ["LUBELOG_URL", "LUBELOG_API_KEY"]},
+    "gatus": {"type": "env", "vars": ["GATUS_URL"]},
 }
 
 # Monitor check -> required services mapping

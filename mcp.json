@@ -55,6 +55,10 @@
     "lubelog": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/lubelog/server.py"]
+    },
+    "gatus": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/gatus/server.py"]
     }
   }
 }
