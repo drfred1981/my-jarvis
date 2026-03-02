@@ -26,6 +26,9 @@ MAX_BUDGET = os.environ.get("JARVIS_MAX_BUDGET", "1.00")
 # Max agentic turns per request
 MAX_TURNS = os.environ.get("JARVIS_MAX_TURNS", "25")
 
+# Timeout per request (seconds)
+TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "300"))
+
 
 @dataclass
 class ConversationSession:
@@ -114,7 +117,7 @@ class ClaudeRunner:
                 env=env,
             )
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=300
+                proc.communicate(), timeout=TIMEOUT
             )
 
             stderr_text = stderr.decode().strip()
@@ -143,7 +146,7 @@ class ClaudeRunner:
 
         except asyncio.TimeoutError:
             logger.error("Claude Code timeout for session %s", session_id)
-            return "Timeout: Claude Code n'a pas répondu dans les 5 minutes."
+            return f"Timeout: Claude Code n'a pas répondu dans les {TIMEOUT} secondes."
         except Exception as e:
             logger.error("Claude Code exception: %s", e)
             return f"Erreur interne: {e}"
