@@ -35,6 +35,8 @@ MONITOR_CHECK_SERVICES = {
     "cluster-health": ["kubernetes", "grafana-prometheus"],
     "homeassistant": ["homeassistant"],
     "fluxcd-reconciliation": ["fluxcd"],
+    "planka-tasks": ["planka"],
+    "gatus-services": ["gatus"],
 }
 
 

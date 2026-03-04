@@ -74,6 +74,26 @@ DEFAULT_CHECKS = [
         ),
         interval_minutes=10,
     ),
+    Check(
+        name="planka-tasks",
+        prompt=(
+            "Vérifie les cartes Planka dans les projets MCO, Apps et Home-Assistant. "
+            "Regarde s'il y a des cartes dans la liste 'En cours'. "
+            "Si oui, traite-les : exécute la tâche décrite, ajoute des commentaires "
+            "à chaque étape, puis déplace la carte vers 'Fait' avec un commentaire de synthèse. "
+            "C'est un check de monitoring automatique."
+        ),
+        interval_minutes=5,
+    ),
+    Check(
+        name="gatus-services",
+        prompt=(
+            "Vérifie l'état des services monitorés par Gatus. "
+            "Liste les endpoints et signale ceux qui sont down ou dégradés. "
+            "C'est un check de monitoring automatique."
+        ),
+        interval_minutes=10,
+    ),
 ]
 
 
