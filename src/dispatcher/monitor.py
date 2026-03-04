@@ -198,7 +198,12 @@ class Monitor:
                         session_id, check.prompt
                     )
 
-                if response and not self._is_all_clear(response):
+                if response and self._is_technical_error(response):
+                    # Technical error from Claude Code itself — log and retry next cycle
+                    MONITOR_CHECKS_TOTAL.labels(check=check.name, result="error").inc()
+                    logger.warning("Check %s: technical error (not a real alert): %s",
+                                   check.name, response[:200])
+                elif response and not self._is_all_clear(response):
                     MONITOR_CHECKS_TOTAL.labels(check=check.name, result="alert").inc()
                     # Issue detected → notify and pause until acknowledged
                     await self.notifier.notify_all(
@@ -231,4 +236,20 @@ class Monitor:
         return any(
             marker in lower
             for marker in ["ras", "rien à signaler", "tout est ok", "tout va bien", "aucun problème"]
+        )
+
+    @staticmethod
+    def _is_technical_error(response: str) -> bool:
+        """Check if the response is a technical error from Claude Code itself,
+        not a real monitoring alert. These should be logged, not sent to the user."""
+        lower = response.lower().strip()
+        return any(
+            marker in lower
+            for marker in [
+                "erreur claude code:",
+                "erreur interne:",
+                "timeout: claude code",
+                "limite de tours",
+                "réponse partielle",
+            ]
         )
