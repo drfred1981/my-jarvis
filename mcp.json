@@ -63,6 +63,10 @@
     "mind": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/mind/server.py"]
+    },
+    "docmost": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/docmost/server.py"]
     }
   }
 }
