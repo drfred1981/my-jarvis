@@ -81,6 +81,7 @@ COPY --chown=jarvis:jarvis requirements.txt ./
 # --- Claude config seed in /opt/jarvis/seed (copied to /home/jarvis at first boot) ---
 COPY --chown=jarvis:jarvis CLAUDE.md mcp.json /opt/jarvis/seed/
 COPY --chown=jarvis:jarvis .claude/ /opt/jarvis/seed/.claude/
+COPY --chown=jarvis:jarvis memory/ /opt/jarvis/seed/memory/
 
 # Fix permissions
 RUN chown -R jarvis:jarvis /opt/jarvis /home/jarvis

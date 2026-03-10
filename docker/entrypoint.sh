@@ -20,6 +20,21 @@ if [ ! -d "$HOME_DIR/.claude" ] && [ -d "$SEED_DIR/.claude" ]; then
     cp -r "$SEED_DIR/.claude" "$HOME_DIR/.claude"
 fi
 
+# Sync memory files from seed (new files only, never overwrite runtime changes)
+MEMORY_SEED="$SEED_DIR/memory"
+MEMORY_DIR="$HOME_DIR/.claude/projects/-home-jarvis/memory"
+if [ -d "$MEMORY_SEED" ]; then
+    mkdir -p "$MEMORY_DIR"
+    for f in "$MEMORY_SEED"/*.md; do
+        [ -f "$f" ] || continue
+        basename="$(basename "$f")"
+        if [ ! -f "$MEMORY_DIR/$basename" ]; then
+            echo "Seeding memory/$basename"
+            cp "$f" "$MEMORY_DIR/$basename"
+        fi
+    done
+fi
+
 # Install/update Python dependencies
 if [ -f /opt/jarvis/app/requirements.txt ]; then
     echo "Installing Python dependencies..."
