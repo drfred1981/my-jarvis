@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 SERVICE_REQUIREMENTS = {
     "kubernetes": {"type": "kubeconfig"},
     "fluxcd": {"type": "kubeconfig"},
+    "kubectl-mcp": {"type": "kubeconfig"},
     "homeassistant": {"type": "env", "vars": ["HA_URL", "HA_TOKEN"]},
     "grafana-prometheus": {"type": "env", "vars": ["PROMETHEUS_URL"]},
     "git": {"type": "env", "vars": ["GIT_REPOS"]},

@@ -59,6 +59,9 @@ RUN sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bi
 # --- Claude Code ---
 RUN npm install -g @anthropic-ai/claude-code
 
+# --- kubectl-mcp-server (advanced K8s diagnostics, security, Helm via MCP) ---
+RUN npm install -g kubectl-mcp-server
+
 # Create app user and add to docker group
 RUN groupadd -f docker && useradd -m -s /bin/bash -G docker jarvis
 
