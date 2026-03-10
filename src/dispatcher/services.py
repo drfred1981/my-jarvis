@@ -15,19 +15,21 @@ logger = logging.getLogger(__name__)
 SERVICE_REQUIREMENTS = {
     "kubernetes": {"type": "kubeconfig"},
     "fluxcd": {"type": "kubeconfig"},
-    "homeassistant": {"type": "env", "vars": ["HA_TOKEN"]},
+    "homeassistant": {"type": "env", "vars": ["HA_URL", "HA_TOKEN"]},
     "grafana-prometheus": {"type": "env", "vars": ["PROMETHEUS_URL"]},
     "git": {"type": "env", "vars": ["GIT_REPOS"]},
-    "planka": {"type": "env", "vars": ["PLANKA_USER", "PLANKA_PASSWORD"]},
-    "miniflux": {"type": "env", "vars": ["MINIFLUX_API_KEY"]},
-    "immich": {"type": "env", "vars": ["IMMICH_API_KEY"]},
-    "karakeep": {"type": "env", "vars": ["KARAKEEP_API_KEY"]},
+    "planka": {"type": "env", "vars": ["PLANKA_URL", "PLANKA_USER", "PLANKA_PASSWORD"]},
+    "miniflux": {"type": "env", "vars": ["MINIFLUX_URL", "MINIFLUX_API_KEY"]},
+    "immich": {"type": "env", "vars": ["IMMICH_URL", "IMMICH_API_KEY"]},
+    "karakeep": {"type": "env", "vars": ["KARAKEEP_URL", "KARAKEEP_API_KEY"]},
     "music-assistant": {"type": "env", "vars": ["MUSIC_ASSISTANT_URL"]},
     "synology-router": {"type": "env", "vars": ["SRM_URL", "SRM_USER", "SRM_PASSWORD"]},
     "plex": {"type": "env", "vars": ["PLEX_URL", "PLEX_TOKEN"]},
     "homebox": {"type": "env", "vars": ["HOMEBOX_URL", "HOMEBOX_USER", "HOMEBOX_PASSWORD"]},
     "lubelog": {"type": "env", "vars": ["LUBELOG_URL", "LUBELOG_API_KEY"]},
     "gatus": {"type": "env", "vars": ["GATUS_URL"]},
+    "docmost": {"type": "env", "vars": ["DOCMOST_URL", "DOCMOST_API_KEY"]},
+    "mind": {"type": "env", "vars": ["MIND_URL", "MIND_USER", "MIND_PASSWORD"]},
 }
 
 # Monitor check -> required services mapping

@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("grafana-prometheus")
 
-PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus.monitoring.svc.cluster.local:9090")
-GRAFANA_URL = os.getenv("GRAFANA_URL", "http://grafana.monitoring.svc.cluster.local:3000")
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "")
+GRAFANA_URL = os.getenv("GRAFANA_URL", "")
 GRAFANA_TOKEN = os.getenv("GRAFANA_TOKEN", "")
 
 

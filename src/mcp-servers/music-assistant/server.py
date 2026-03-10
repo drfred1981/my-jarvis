@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("music-assistant")
 
-MA_URL = os.getenv("MUSIC_ASSISTANT_URL", "http://music-assistant.default.svc.cluster.local:8095")
+MA_URL = os.getenv("MUSIC_ASSISTANT_URL", "")
 
 
 def _client() -> httpx.Client:

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("homeassistant")
 
-HA_URL = os.getenv("HA_URL", "http://homeassistant.default.svc.cluster.local:8123")
+HA_URL = os.getenv("HA_URL", "")
 HA_TOKEN = os.getenv("HA_TOKEN", "")
 
 

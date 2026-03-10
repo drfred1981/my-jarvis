@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("immich")
 
-IMMICH_URL = os.getenv("IMMICH_URL", "http://immich.default.svc.cluster.local:2283")
+IMMICH_URL = os.getenv("IMMICH_URL", "")
 IMMICH_API_KEY = os.getenv("IMMICH_API_KEY", "")
 
 

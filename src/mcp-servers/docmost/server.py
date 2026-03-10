@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("docmost")
 
-DOCMOST_URL = os.getenv("DOCMOST_URL", "http://docmost.services-it.svc.cluster.local:3000")
+DOCMOST_URL = os.getenv("DOCMOST_URL", "")
 DOCMOST_API_KEY = os.getenv("DOCMOST_API_KEY", "")
 
 

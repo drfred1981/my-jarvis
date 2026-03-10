@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("planka")
 
-PLANKA_URL = os.getenv("PLANKA_URL", "http://planka.default.svc.cluster.local:1337")
+PLANKA_URL = os.getenv("PLANKA_URL", "")
 PLANKA_USER = os.getenv("PLANKA_USER", "")
 PLANKA_PASSWORD = os.getenv("PLANKA_PASSWORD", "")
 

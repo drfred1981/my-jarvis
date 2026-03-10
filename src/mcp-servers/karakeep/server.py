@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("karakeep")
 
-KARAKEEP_URL = os.getenv("KARAKEEP_URL", "http://karakeep.default.svc.cluster.local:3000")
+KARAKEEP_URL = os.getenv("KARAKEEP_URL", "")
 KARAKEEP_API_KEY = os.getenv("KARAKEEP_API_KEY", "")
 
 

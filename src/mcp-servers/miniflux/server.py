@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("miniflux")
 
-MINIFLUX_URL = os.getenv("MINIFLUX_URL", "http://miniflux.default.svc.cluster.local:8080")
+MINIFLUX_URL = os.getenv("MINIFLUX_URL", "")
 MINIFLUX_API_KEY = os.getenv("MINIFLUX_API_KEY", "")
 
 
