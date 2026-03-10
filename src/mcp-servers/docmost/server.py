@@ -22,12 +22,38 @@ mcp = FastMCP("docmost")
 
 DOCMOST_URL = os.getenv("DOCMOST_URL", "")
 DOCMOST_API_KEY = os.getenv("DOCMOST_API_KEY", "")
+DOCMOST_USER = os.getenv("DOCMOST_USER", "")
+DOCMOST_PASSWORD = os.getenv("DOCMOST_PASSWORD", "")
+
+_session_cookies: dict = {}
+
+
+def _authenticate() -> dict:
+    """Authenticate via login/password and return session cookies with JWT."""
+    global _session_cookies
+    if _session_cookies:
+        return _session_cookies
+    with httpx.Client(base_url=DOCMOST_URL, timeout=30) as client:
+        resp = client.post("/api/auth/login", json={
+            "email": DOCMOST_USER,
+            "password": DOCMOST_PASSWORD,
+        })
+        resp.raise_for_status()
+        _session_cookies = dict(resp.cookies)
+    return _session_cookies
 
 
 def _client() -> httpx.Client:
+    if DOCMOST_API_KEY:
+        return httpx.Client(
+            base_url=DOCMOST_URL,
+            headers={"Authorization": f"Bearer {DOCMOST_API_KEY}"},
+            timeout=30,
+        )
+    cookies = _authenticate()
     return httpx.Client(
         base_url=DOCMOST_URL,
-        headers={"Authorization": f"Bearer {DOCMOST_API_KEY}"},
+        cookies=cookies,
         timeout=30,
     )
 

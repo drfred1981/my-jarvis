@@ -29,7 +29,7 @@ SERVICE_REQUIREMENTS = {
     "homebox": {"type": "env", "vars": ["HOMEBOX_URL", "HOMEBOX_USER", "HOMEBOX_PASSWORD"]},
     "lubelog": {"type": "env", "vars": ["LUBELOG_URL", "LUBELOG_API_KEY"]},
     "gatus": {"type": "env", "vars": ["GATUS_URL"]},
-    "docmost": {"type": "env", "vars": ["DOCMOST_URL", "DOCMOST_API_KEY"]},
+    "docmost": {"type": "env", "vars": ["DOCMOST_URL"]},
     "mind": {"type": "env", "vars": ["MIND_URL", "MIND_USER", "MIND_PASSWORD"]},
 }
 
