@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-import tempfile
 from dataclasses import dataclass
 
 from metrics import ACTIVE_SESSIONS
@@ -61,12 +60,10 @@ class ClaudeRunner:
             logger.warning("No MCP services configured, Claude will run without tools")
             return None
 
-        # Write filtered config to a temp file
-        if self._runtime_mcp_config and os.path.isfile(self._runtime_mcp_config):
-            os.unlink(self._runtime_mcp_config)
-
-        fd, path = tempfile.mkstemp(suffix=".json", prefix="jarvis-mcp-")
-        with os.fdopen(fd, "w") as f:
+        # Write filtered config to a fixed path (avoids /tmp cleanup issues)
+        path = os.path.join(JARVIS_PROJECT_DIR, ".claude", "mcp-runtime.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
             json.dump(active_config, f, indent=2)
         self._runtime_mcp_config = path
         return path
