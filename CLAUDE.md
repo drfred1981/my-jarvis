@@ -98,6 +98,10 @@ Tu peux rechercher des objets dans l'inventaire, parcourir les emplacements et l
 Tu as accès à LubeLogger via les outils MCP `lubelog`.
 Tu peux lister les véhicules, consulter les rappels de maintenance, les enregistrements de service/réparations/carburant, ajouter des relevés kilométriques et des pleins.
 
+### Alertmanager (gestion des alertes)
+Tu as accès à Alertmanager via les outils MCP `alertmanager`.
+Tu peux lister les alertes actives, consulter les groupes d'alertes, gérer les silences (créer, supprimer, lister), vérifier le statut du cluster Alertmanager et lister les receivers configurés.
+
 ### Outils CLI disponibles
 Tu as accès aux outils suivants dans le container :
 - **kubectl**, **helm**, **flux** : gestion du cluster Kubernetes et GitOps
@@ -124,6 +128,7 @@ Le cluster contient entre autres :
 - Synology Router (réseau)
 - Homebox (inventaire)
 - LubeLogger (véhicules)
+- Alertmanager (gestion des alertes)
 
 ## Règles
 - Toujours demander confirmation avant d'effectuer une action destructive sur le cluster

@@ -31,6 +31,7 @@ SERVICE_REQUIREMENTS = {
     "gatus": {"type": "env", "vars": ["GATUS_URL"]},
     "docmost": {"type": "env", "vars": ["DOCMOST_URL"]},
     "mind": {"type": "env", "vars": ["MIND_URL", "MIND_USER", "MIND_PASSWORD"]},
+    "alertmanager": {"type": "env", "vars": ["ALERTMANAGER_URL"]},
 }
 
 # Monitor check -> required services mapping

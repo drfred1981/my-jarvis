@@ -86,5 +86,7 @@ Principes clés à appliquer systématiquement :
 - **Templates OK** pour : données dynamiques service calls, notifications, trigger context, itération entités
 
 ## Liens vers fichiers détaillés
+- [pod-environment.md](pod-environment.md) - Environnement du pod Jarvis (image, outils, repos, services, URLs)
 - [planka-cards.md](planka-cards.md) - Détails des cartes existantes
 - [ha-best-practices.md](ha-best-practices.md) - Best practices Home Assistant complètes
+- [plasma-project.md](plasma-project.md) - Projet Plasma : moteur 2D navigation multiagents (Java/Spring Boot/WebSocket)

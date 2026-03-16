@@ -67,6 +67,10 @@
     "docmost": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/docmost/server.py"]
+    },
+    "alertmanager": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/alertmanager/server.py"]
     }
   }
 }
