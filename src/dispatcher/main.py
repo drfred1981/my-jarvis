@@ -237,7 +237,16 @@ def _preclone_git_repos():
     os.makedirs(cache_dir, exist_ok=True)
     logger.info("Git pre-clone: %d repos to %s", len(repos), cache_dir)
 
-    for name, url in repos.items():
+    for name, value in repos.items():
+        # Support both formats: string (legacy) and object (new with branch)
+        if isinstance(value, str):
+            url, branch = value, ""
+        elif isinstance(value, dict):
+            url, branch = value["url"], value.get("branch", "")
+        else:
+            logger.warning("Git pre-clone: skipping %s, unexpected type %s", name, type(value))
+            continue
+
         repo_dir = os.path.join(cache_dir, name)
         auth_url = url
         if github_token and "github.com" in url:
@@ -245,7 +254,7 @@ def _preclone_git_repos():
 
         try:
             if os.path.isdir(os.path.join(repo_dir, ".git")):
-                logger.info("Git pre-clone: %s already cached, pulling...", name)
+                logger.info("Git pre-clone: %s already cached, pulling (branch=%s)...", name, branch or "default")
                 result = subprocess.run(
                     ["git", "-C", repo_dir, "fetch", "--all", "--prune"],
                     capture_output=True, text=True, timeout=60,
@@ -253,6 +262,11 @@ def _preclone_git_repos():
                 if result.returncode != 0:
                     logger.warning("Git fetch failed for %s: %s", name, result.stderr.strip())
                 else:
+                    if branch:
+                        subprocess.run(
+                            ["git", "-C", repo_dir, "checkout", branch],
+                            capture_output=True, text=True, timeout=30,
+                        )
                     subprocess.run(
                         ["git", "-C", repo_dir, "pull", "--rebase"],
                         capture_output=True, text=True, timeout=60,
@@ -263,10 +277,13 @@ def _preclone_git_repos():
                 if os.path.exists(repo_dir):
                     shutil.rmtree(repo_dir, ignore_errors=True)
                     logger.info("Git pre-clone: removed partial dir for %s", name)
-                logger.info("Git pre-clone: cloning %s ...", name)
+                logger.info("Git pre-clone: cloning %s (branch=%s)...", name, branch or "default")
+                cmd = ["git", "clone"]
+                if branch:
+                    cmd.extend(["--branch", branch])
+                cmd.extend([auth_url, repo_dir])
                 result = subprocess.run(
-                    ["git", "clone", auth_url, repo_dir],
-                    capture_output=True, text=True, timeout=120,
+                    cmd, capture_output=True, text=True, timeout=120,
                 )
                 if result.returncode != 0:
                     logger.error("Git clone failed for %s: %s", name, result.stderr.strip())

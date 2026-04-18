@@ -5,8 +5,14 @@ Manages multiple git repositories independently:
 - View git history, branches, diffs
 - Supports any git hosting (GitHub, GitLab, Gitea, etc.)
 
-Repos are configured via GIT_REPOS env var:
-  GIT_REPOS='{"my-jarvis":"https://github.com/user/my-jarvis.git","infra":"https://github.com/user/infra.git"}'
+Repos are configured via GIT_REPOS env var (two formats supported):
+  # Legacy format (string value = URL, default branch):
+  GIT_REPOS='{"my-jarvis":"https://github.com/user/my-jarvis.git"}'
+
+  # New format (object value with url and optional branch):
+  GIT_REPOS='{"my-jarvis":{"url":"https://github.com/user/my-jarvis.git","branch":"develop"}}'
+
+  # Mixed format is also supported.
 
 Repos are cloned to $JARVIS_PROJECT_DIR/git-cache/ (persistent volume)
 and refreshed periodically via pull --rebase.
@@ -43,14 +49,26 @@ _CACHE_DIR = os.path.join(_PROJECT_DIR, "git-cache")
 _REFRESH_INTERVAL = int(os.getenv("GIT_REFRESH_INTERVAL", "300"))  # 5 min
 
 
-def _load_repos() -> dict[str, str]:
-    """Load repos from GIT_REPOS env var."""
-    repos = {}
+def _load_repos() -> dict[str, dict]:
+    """Load repos from GIT_REPOS env var.
+
+    Supports two value formats per repo:
+    - String value (legacy): "https://..." → {"url": "https://...", "branch": ""}
+    - Object value (new):    {"url": "https://...", "branch": "develop"}
+    """
+    repos: dict[str, dict] = {}
     repos_json = os.getenv("GIT_REPOS", "")
     logger.info("GIT_REPOS env var: %s", repos_json[:200] if repos_json else "(empty)")
     if repos_json:
         try:
-            repos.update(json.loads(repos_json))
+            raw = json.loads(repos_json)
+            for name, value in raw.items():
+                if isinstance(value, str):
+                    repos[name] = {"url": value, "branch": ""}
+                elif isinstance(value, dict):
+                    repos[name] = {"url": value["url"], "branch": value.get("branch", "")}
+                else:
+                    logger.warning("Skipping repo %s: unexpected value type %s", name, type(value))
             logger.info("Parsed %d repos: %s", len(repos), list(repos.keys()))
         except json.JSONDecodeError as e:
             logger.error("Invalid GIT_REPOS JSON: %s (error: %s)", repos_json, e)
@@ -144,17 +162,18 @@ def _get_default_branch(repo_dir: Path) -> str:
     return "main"
 
 
-def _resolve_repo(name: str) -> tuple[str, str] | None:
-    """Resolve a repo name to (name, url)."""
+def _resolve_repo(name: str) -> tuple[str, str, str] | None:
+    """Resolve a repo name to (name, url, configured_branch)."""
     if not name and len(REPOS) == 1:
         k = next(iter(REPOS))
-        return k, REPOS[k]
+        return k, REPOS[k]["url"], REPOS[k]["branch"]
     if name in REPOS:
-        return name, REPOS[name]
+        return name, REPOS[name]["url"], REPOS[name]["branch"]
     # Partial match
     matches = [(k, v) for k, v in REPOS.items() if name in k]
     if len(matches) == 1:
-        return matches[0]
+        k, v = matches[0]
+        return k, v["url"], v["branch"]
     return None
 
 
@@ -163,7 +182,10 @@ def list_repos() -> str:
     """List all configured git repositories."""
     if not REPOS:
         return "No repositories configured. Set GIT_REPOS env var."
-    return json.dumps([{"name": k, "url": v} for k, v in REPOS.items()], indent=2)
+    return json.dumps([
+        {"name": k, "url": v["url"], "branch": v["branch"] or "(default)"}
+        for k, v in REPOS.items()
+    ], indent=2)
 
 
 @mcp.tool()
@@ -178,9 +200,9 @@ def browse(repo: str = "", path: str = "", branch: str = "") -> str:
     resolved = _resolve_repo(repo)
     if not resolved:
         return _repo_not_found_error(repo)
-    name, url = resolved
+    name, url, cfg_branch = resolved
 
-    err = _ensure_cloned(name, url, branch)
+    err = _ensure_cloned(name, url, branch or cfg_branch)
     if err:
         return f"Error accessing {name}: {err}"
 
@@ -215,9 +237,9 @@ def read_file(file_path: str, repo: str = "", branch: str = "") -> str:
     resolved = _resolve_repo(repo)
     if not resolved:
         return _repo_not_found_error(repo)
-    name, url = resolved
+    name, url, cfg_branch = resolved
 
-    err = _ensure_cloned(name, url, branch)
+    err = _ensure_cloned(name, url, branch or cfg_branch)
     if err:
         return f"Error accessing {name}: {err}"
 
@@ -239,9 +261,9 @@ def search_files(pattern: str, repo: str = "", path: str = "") -> str:
     resolved = _resolve_repo(repo)
     if not resolved:
         return _repo_not_found_error(repo)
-    name, url = resolved
+    name, url, cfg_branch = resolved
 
-    err = _ensure_cloned(name, url)
+    err = _ensure_cloned(name, url, cfg_branch)
     if err:
         return f"Error accessing {name}: {err}"
 
@@ -276,9 +298,9 @@ def git_log(repo: str = "", count: int = 20, path: str = "") -> str:
     resolved = _resolve_repo(repo)
     if not resolved:
         return _repo_not_found_error(repo)
-    name, url = resolved
+    name, url, cfg_branch = resolved
 
-    err = _ensure_cloned(name, url)
+    err = _ensure_cloned(name, url, cfg_branch)
     if err:
         return f"Error accessing {name}: {err}"
 
@@ -318,9 +340,9 @@ def git_diff(repo: str = "", ref1: str = "HEAD~1", ref2: str = "HEAD", path: str
     resolved = _resolve_repo(repo)
     if not resolved:
         return _repo_not_found_error(repo)
-    name, url = resolved
+    name, url, cfg_branch = resolved
 
-    err = _ensure_cloned(name, url)
+    err = _ensure_cloned(name, url, cfg_branch)
     if err:
         return f"Error accessing {name}: {err}"
 
@@ -349,9 +371,9 @@ def list_branches(repo: str = "") -> str:
     resolved = _resolve_repo(repo)
     if not resolved:
         return _repo_not_found_error(repo)
-    name, url = resolved
+    name, url, cfg_branch = resolved
 
-    err = _ensure_cloned(name, url)
+    err = _ensure_cloned(name, url, cfg_branch)
     if err:
         return f"Error accessing {name}: {err}"
 
@@ -376,12 +398,12 @@ def _clone_all_repos():
     """Clone all configured repos that aren't already cached."""
     logger.info("Starting initial clone of %d repos to %s", len(REPOS), _CACHE_DIR)
     os.makedirs(_CACHE_DIR, exist_ok=True)
-    for name, url in REPOS.items():
+    for name, repo_cfg in REPOS.items():
         try:
             repo_dir = _get_repo_dir(name)
             cached = repo_dir.exists() and (repo_dir / ".git").exists()
-            logger.info("Repo %s: cached=%s, dir=%s", name, cached, repo_dir)
-            err = _ensure_cloned(name, url)
+            logger.info("Repo %s: cached=%s, dir=%s, branch=%s", name, cached, repo_dir, repo_cfg["branch"] or "(default)")
+            err = _ensure_cloned(name, repo_cfg["url"], repo_cfg["branch"])
             if err:
                 logger.error("Failed to clone/update %s: %s", name, err)
             else:
@@ -397,9 +419,9 @@ def _refresh_all_repos():
     _clone_all_repos()
     while True:
         time.sleep(_REFRESH_INTERVAL)
-        for name, url in REPOS.items():
+        for name, repo_cfg in REPOS.items():
             try:
-                err = _ensure_cloned(name, url)
+                err = _ensure_cloned(name, repo_cfg["url"], repo_cfg["branch"])
                 if err:
                     logger.warning("Auto-refresh failed for %s: %s", name, err)
                 else:
