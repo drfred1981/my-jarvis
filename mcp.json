@@ -71,6 +71,14 @@
     "alertmanager": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/alertmanager/server.py"]
+    },
+    "booklore": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/booklore/server.py"]
+    },
+    "memory": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/memory/server.py"]
     }
   }
 }

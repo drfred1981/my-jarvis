@@ -32,6 +32,8 @@ SERVICE_REQUIREMENTS = {
     "docmost": {"type": "env", "vars": ["DOCMOST_URL"]},
     "mind": {"type": "env", "vars": ["MIND_URL", "MIND_USER", "MIND_PASSWORD"]},
     "alertmanager": {"type": "env", "vars": ["ALERTMANAGER_URL"]},
+    "booklore": {"type": "env", "vars": ["BOOKLORE_URL", "BOOKLORE_USER", "BOOKLORE_PASSWORD"]},
+    "memory": {"type": "always"},
 }
 
 # Monitor check -> required services mapping
@@ -41,6 +43,8 @@ MONITOR_CHECK_SERVICES = {
     "fluxcd-reconciliation": ["fluxcd"],
     "planka-tasks": ["planka"],
     "gatus-services": ["gatus"],
+    "hourly-pulse": ["kubernetes"],
+    "daily-digest": ["memory", "git"],
 }
 
 
@@ -61,6 +65,8 @@ def get_available_services() -> dict[str, bool]:
             result[name] = _check_kubeconfig()
         elif req["type"] == "env":
             result[name] = all(bool(os.getenv(v, "").strip()) for v in req["vars"])
+        elif req["type"] == "always":
+            result[name] = True
     return result
 
 

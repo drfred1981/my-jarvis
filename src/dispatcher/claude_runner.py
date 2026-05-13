@@ -25,8 +25,10 @@ MAX_BUDGET = os.environ.get("JARVIS_MAX_BUDGET", "1.00")
 # Max agentic turns per request
 MAX_TURNS = os.environ.get("JARVIS_MAX_TURNS", "25")
 
-# Timeout per request (seconds)
-TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "300"))
+# Timeout per request (seconds).
+# Default 3600s (1h) to accommodate the daily-digest and complex incident
+# investigations. Override via the JARVIS_TIMEOUT env var if needed.
+TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "3600"))
 
 
 @dataclass
