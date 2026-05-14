@@ -35,6 +35,61 @@ Tu reçois périodiquement des demandes de vérification automatique. Dans ce ca
 - Ne re-signale un problème connu que s'il s'est **aggravé** (plus de pods en erreur, nouveau symptôme, etc.)
 - Quand l'utilisateur te parle directement (pas un check automatique), tu peux bien sûr mentionner les problèmes en cours s'ils sont pertinents
 
+## Backoff adaptatif des checks (économise le budget Claude)
+
+Quand un check horaire ne révèle **aucun changement** par rapport au précédent, tu dois ralentir la cadence — pas juste répondre "RAS" :
+
+1. À chaque check, **calcule un fingerprint** de l'état (hash trié de : pods en erreur, alertes Prom actives, FluxCD failures, entités HA unavailable, services Gatus down). Compare-le au `last_fingerprint` stocké dans la mémoire MCP (`load_context("monitoring/backoff_state")`).
+2. Si **fingerprint identique** au précédent :
+   - Incrémente `consecutive_unchanged_count`
+   - Réponds simplement "RAS" sans aucune action (pas de carte Planka, pas de notification)
+   - Sauvegarde `next_check_due = now + (consecutive_unchanged_count) heures`
+   - Au check suivant, si `now < next_check_due` → encore "RAS" immédiat sans rien analyser
+3. Si **fingerprint différent** (ou nouveau symptôme) :
+   - Remets `consecutive_unchanged_count = 0`, traite normalement
+   - Met à jour `last_fingerprint`
+4. **Reset matinal** : au premier check effectif après 06:00 local, force `consecutive_unchanged_count = 0` et reprends le rythme nominal (sert aussi de daily-digest).
+
+Backoff cible : 1er skip = 1h supplémentaire, 2e = 2h, 3e = 3h, … jusqu'au reset du matin.
+
+Le state vit dans la mémoire MCP, clé `monitoring/backoff_state`. La logique de calcul de fingerprint et de gestion d'état doit être déléguée au script CLI `jarvis-monitor-state` (voir section "Scripts réutilisables fredtool/jarvis" ci-dessous).
+
+## Anti-doublons sur les cartes Planka
+
+**Avant toute création de carte Planka**, vérifier qu'une carte équivalente n'existe pas déjà sur le board cible — toutes listes confondues (Idées/Backlog, À faire, En cours, Fait).
+
+Procédure :
+1. `GET /api/boards/{board_id}` → parcourir `included.cards`
+2. Normaliser les titres (lowercase, trim, retrait des dates/timestamps volatiles) et comparer
+3. Si une carte équivalente existe :
+   - **Ne pas en créer une nouvelle**
+   - Ajouter un commentaire (`POST /api/cards/{card_id}/comments`) avec les nouvelles observations
+4. Sinon, créer normalement
+
+S'applique à TOUS les projets Planka (MCO, Apps, Home-Assistant, Home-Automation, etc.).
+
+La logique de dedup vit dans le script CLI `jarvis-planka` (voir section ci-dessous) — utilise-le plutôt que de réimplementer en adhoc à chaque check.
+
+## Scripts réutilisables : fredtool/jarvis/
+
+Repo : `drfred1981/fred-tool`, clone local : `/home/jarvis/git-cache/fredtool/`, répertoire dédié : **`fredtool/jarvis/`**.
+
+**Règle** : à chaque fois qu'une tâche se répète au fil des checks, **extrais-la en script CLI** dans `fredtool/jarvis/`. Avant d'écrire du code adhoc, **regarde d'abord** s'il existe déjà un script.
+
+Chaque script doit :
+- avoir un docstring d'en-tête (usage, exemples)
+- exposer des arguments via `argparse` (`--help` doit suffire à un humain)
+- logger avec le module `logging` standard (niveau `--verbose` configurable)
+- être appelable depuis bash et importable depuis Python
+- être documenté dans `fredtool/jarvis/README.md`
+
+**Cycle** : créer/modifier le script → tester localement → `git commit -m "feat(jarvis): ..."` → `git push` dans `fred-tool`. Réutilise-le ensuite à tous les checks suivants.
+
+Scripts cibles :
+- `jarvis-planka` : créer/maj une carte Planka avec dédup automatique
+- `jarvis-monitor-state` : gérer le fingerprint d'état et le backoff des checks
+- D'autres à venir au fur et à mesure des tâches récurrentes identifiées
+
 ## Capacités
 
 ### Kubernetes
