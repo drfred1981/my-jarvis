@@ -52,7 +52,7 @@ Quand un check horaire ne révèle **aucun changement** par rapport au précéde
 
 Backoff cible : 1er skip = 1h supplémentaire, 2e = 2h, 3e = 3h, … jusqu'au reset du matin.
 
-Le state vit dans la mémoire MCP, clé `monitoring/backoff_state`. La logique de calcul de fingerprint et de gestion d'état doit être déléguée au script CLI `jarvis-monitor-state` (voir section "Scripts réutilisables fredtool/jarvis" ci-dessous).
+Le state vit dans la mémoire MCP, clé `monitoring/backoff_state`. La logique de calcul de fingerprint et de gestion d'état doit être déléguée au script CLI `monitoring/monitor_state.py` (voir section "Scripts réutilisables fredtool/jarvis" ci-dessous).
 
 ## Anti-doublons sur les cartes Planka
 
@@ -68,27 +68,43 @@ Procédure :
 
 S'applique à TOUS les projets Planka (MCO, Apps, Home-Assistant, Home-Automation, etc.).
 
-La logique de dedup vit dans le script CLI `jarvis-planka` (voir section ci-dessous) — utilise-le plutôt que de réimplementer en adhoc à chaque check.
+La logique de dedup vit dans le script CLI `planka/planka.py` (voir section ci-dessous) — utilise-le plutôt que de réimplementer en adhoc à chaque check.
+
+## Synchronisation des repos git (pull --rebase régulier)
+
+L'utilisateur travaille en parallèle sur les mêmes repos que toi (`apps-in-k8s`, `my-jarvis`, `fredtool`, …). Pour éviter d'écraser ses commits ou de générer des conflits inutiles :
+
+- **Au démarrage de toute session** et **avant tout `git commit`** sur un repo partagé : lance `git pull --rebase --autostash origin <branche>` (ou le script `git-sync/sync_repos.py`).
+- **Au moins une fois par heure** sur les sessions longues.
+- **Avant chaque check de monitoring** qui touche aux repos.
+- En cas de conflit pendant le rebase : **regarde le commit upstream** (`git log --oneline <ancien>..<nouveau> -- <fichier>`) pour comprendre l'intention de l'utilisateur avant de résoudre, ne pas écraser bêtement.
+
+Le script `git-sync/sync_repos.py` (dans `fredtool/jarvis/`) fait `git pull --rebase --autostash` sur tous les repos sous `/home/jarvis/git-cache/` en une commande, et signale clairement les repos en conflit pour résolution manuelle.
 
 ## Scripts réutilisables : fredtool/jarvis/
 
 Repo : `drfred1981/fred-tool`, clone local : `/home/jarvis/git-cache/fredtool/`, répertoire dédié : **`fredtool/jarvis/`**.
 
-**Règle** : à chaque fois qu'une tâche se répète au fil des checks, **extrais-la en script CLI** dans `fredtool/jarvis/`. Avant d'écrire du code adhoc, **regarde d'abord** s'il existe déjà un script.
+**Règle** : pour **toute action demandée** (pas seulement les tâches récurrentes), **écris un script Python** dans `fredtool/jarvis/`. Avant d'écrire du code adhoc, **regarde d'abord** s'il existe déjà un script à étendre. ⚠️ On écrit des scripts qui *réalisent* des actions, jamais un script qui génère du code.
 
-Chaque script doit :
-- avoir un docstring d'en-tête (usage, exemples)
-- exposer des arguments via `argparse` (`--help` doit suffire à un humain)
-- logger avec le module `logging` standard (niveau `--verbose` configurable)
-- être appelable depuis bash et importable depuis Python
-- être documenté dans `fredtool/jarvis/README.md`
+**Structure : un répertoire par contexte.** Chaque script vit dans
+`fredtool/jarvis/<contexte>/` avec :
+- `<script>.py` : le script Python (shebang, exécutable)
+- `requirements.txt` : dépendances du contexte (obligatoire, même vide → "stdlib only"). Si des deps : venv dédié `<contexte>/.venv` (jamais commité)
+- `README.md` : doc markdown du contexte (usage, env, sous-commandes, schéma de sortie, exemples)
 
-**Cycle** : créer/modifier le script → tester localement → `git commit -m "feat(jarvis): ..."` → `git push` dans `fred-tool`. Réutilise-le ensuite à tous les checks suivants.
+Chaque script doit : docstring d'en-tête + `argparse` (`--help` complet),
+`logging` sur stderr (`-v`/`-vv`), données JSON sur stdout, credentials via
+env vars, exit codes `0`/`1`/`2`.
 
-Scripts cibles :
-- `jarvis-planka` : créer/maj une carte Planka avec dédup automatique
-- `jarvis-monitor-state` : gérer le fingerprint d'état et le backoff des checks
-- D'autres à venir au fur et à mesure des tâches récurrentes identifiées
+**Cycle** : créer/modifier → tester `--help` + ≥1 sous-commande → `git commit -m "feat(<contexte>): ..."` → `git push` dans `fred-tool`.
+
+Contextes actuels :
+- `planka/planka.py` : créer/maj une carte Planka avec dédup automatique
+- `monitoring/monitor_state.py` : fingerprint d'état + backoff des checks
+- `git-sync/sync_repos.py` : `git pull --rebase --autostash` sur tous les repos
+- `booklore/booklore.py` : catalogue de livres physiques (lookup ISBN)
+- D'autres contextes à créer au fil des actions demandées
 
 ## Capacités
 
