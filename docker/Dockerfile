@@ -73,8 +73,9 @@ ENV PATH="/opt/jarvis/venv/bin:$PATH"
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
-# Entrypoint script
+# Entrypoint script + seed merge helper
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/seed_merge.py /opt/jarvis/seed_merge.py
 
 # --- App source code in /opt/jarvis/app (immutable, not on volume) ---
 WORKDIR /opt/jarvis/app
@@ -85,6 +86,7 @@ COPY --chown=jarvis:jarvis requirements.txt ./
 COPY --chown=jarvis:jarvis CLAUDE.md mcp.json /opt/jarvis/seed/
 COPY --chown=jarvis:jarvis .claude/ /opt/jarvis/seed/.claude/
 COPY --chown=jarvis:jarvis memory/ /opt/jarvis/seed/memory/
+COPY --chown=jarvis:jarvis skills/ /opt/jarvis/seed/skills/
 
 # Fix permissions
 RUN chown -R jarvis:jarvis /opt/jarvis /home/jarvis

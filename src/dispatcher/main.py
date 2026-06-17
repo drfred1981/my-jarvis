@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from claude_runner import ClaudeRunner
 from channels.discord_bot import DiscordBot
 from channels.web_socket import ConnectionManager
+from conversations import keys
 from metrics import (
     MESSAGES_TOTAL,
     MESSAGE_DURATION_SECONDS,
@@ -32,8 +33,9 @@ from metrics import (
     SERVICES_AVAILABLE,
     WEBSOCKET_CONNECTIONS,
 )
-from monitor import Monitor
 from notifier import Notifier
+from proactive.introspector import Introspector
+from proactive.monitor import Monitor
 from services import get_available_services, log_service_status
 
 logging.basicConfig(
@@ -47,6 +49,7 @@ claude = ClaudeRunner()
 ws_manager = ConnectionManager()
 notifier = Notifier()
 monitor = Monitor(claude_runner=claude, notifier=notifier)
+introspector = Introspector(claude_runner=claude, notifier=notifier, registry=claude.registry)
 discord_bot: DiscordBot | None = None
 
 # Prometheus metrics endpoint
@@ -121,8 +124,9 @@ async def root():
 async def chat(req: MessageRequest):
     """Send a message to Jarvis and get a response."""
     logger.info("REST /api/chat (session=%s): %s", req.session_id, req.message[:100])
+    conv_key = keys.web(req.session_id)
     with MESSAGE_DURATION_SECONDS.labels(channel="rest").time():
-        response = await claude.send_message(req.session_id, req.message)
+        response = await claude.send_message(conv_key, req.message, is_user_initiated=True)
     MESSAGES_TOTAL.labels(channel="rest", status="success").inc()
     logger.info("REST response (session=%s): %s", req.session_id, response[:100])
     return MessageResponse(response=response, session_id=req.session_id)
@@ -131,7 +135,7 @@ async def chat(req: MessageRequest):
 @app.post("/api/sessions/{session_id}/clear")
 async def clear_session(session_id: str):
     """Clear a conversation session."""
-    claude.clear_session(session_id)
+    claude.clear_session(keys.web(session_id))
     return {"status": "cleared", "session_id": session_id}
 
 
@@ -199,10 +203,10 @@ async def synology_webhook(payload: dict):
     # Synology Chat sends: {"token": "...", "user_id": ..., "username": "...", "text": "..."}
     text = payload.get("text", "")
     user_id = str(payload.get("user_id", "synology"))
-    session_id = f"synology-{user_id}"
+    conv_key = keys.synology(user_id)
 
     with MESSAGE_DURATION_SECONDS.labels(channel="synology").time():
-        response = await claude.send_message(session_id, text)
+        response = await claude.send_message(conv_key, text, is_user_initiated=True)
     MESSAGES_TOTAL.labels(channel="synology", status="success").inc()
 
     # Synology Chat expects: {"text": "response"}
@@ -333,11 +337,17 @@ async def startup():
 
     logger.info("Channel enabled: Web UI (http://0.0.0.0:8080)")
 
-    # Proactive monitoring
+    # Proactive monitoring (Track A) + autonomous introspection (Track B)
     try:
         await monitor.start()
     except Exception as e:
         logger.warning("Monitoring failed to start: %s", e)
+
+    try:
+        claude.add_activity_listener(introspector.notify_activity)
+        await introspector.start()
+    except Exception as e:
+        logger.warning("Introspection failed to start: %s", e)
 
     logger.info("Jarvis dispatcher ready")
 
@@ -345,6 +355,7 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await monitor.stop()
+    await introspector.stop()
     if discord_bot:
         try:
             await discord_bot.close()

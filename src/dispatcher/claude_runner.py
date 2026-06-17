@@ -4,8 +4,9 @@ import asyncio
 import json
 import logging
 import os
-from dataclasses import dataclass
 
+from context import injector
+from conversations import ConversationRegistry, keys
 from metrics import ACTIVE_SESSIONS
 from services import get_active_services, get_active_mcp_config, get_allowed_tools_string
 
@@ -19,6 +20,11 @@ JARVIS_PROJECT_DIR = os.environ.get(
 # MCP config file path (base config, will be filtered at runtime)
 MCP_CONFIG = os.path.join(JARVIS_PROJECT_DIR, "mcp.json")
 
+# Durable conversation index (survives restarts, next to native sessions)
+CONVERSATIONS_INDEX = os.path.join(
+    JARVIS_PROJECT_DIR, ".claude", "conversations-index.json"
+)
+
 # Max budget per request (USD)
 MAX_BUDGET = os.environ.get("JARVIS_MAX_BUDGET", "1.00")
 
@@ -31,26 +37,26 @@ MAX_TURNS = os.environ.get("JARVIS_MAX_TURNS", "25")
 TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "3600"))
 
 
-@dataclass
-class ConversationSession:
-    """Tracks a conversation session with Claude Code."""
-    session_id: str
-    claude_session_id: str | None = None
-
-
 class ClaudeRunner:
-    """Runs Claude Code CLI commands and manages conversation sessions."""
+    """Runs Claude Code CLI commands and manages conversation sessions.
 
-    def __init__(self):
-        self.sessions: dict[str, ConversationSession] = {}
+    Conversation state (the mapping key → Claude session id + activity) lives in
+    a durable `ConversationRegistry`, so `--resume` continuity and idle tracking
+    survive restarts. Callers address conversations by their structured key
+    (see `conversations.keys`).
+    """
+
+    def __init__(self, registry: ConversationRegistry | None = None):
+        self.registry = registry or ConversationRegistry(CONVERSATIONS_INDEX)
         self._lock = asyncio.Lock()
         self._runtime_mcp_config: str | None = None
+        self._activity_listeners: list = []
+        ACTIVE_SESSIONS.set(self.registry.count())
 
-    def _get_or_create_session(self, session_id: str) -> ConversationSession:
-        if session_id not in self.sessions:
-            self.sessions[session_id] = ConversationSession(session_id=session_id)
-            ACTIVE_SESSIONS.inc()
-        return self.sessions[session_id]
+    def add_activity_listener(self, callback) -> None:
+        """Register a callback fired on every genuine user message (e.g. to wake
+        the introspector and reset its backoff). Called with no arguments."""
+        self._activity_listeners.append(callback)
 
     def _get_mcp_config_path(self) -> str | None:
         """Generate a filtered mcp.json with only active services."""
@@ -70,12 +76,40 @@ class ClaudeRunner:
         self._runtime_mcp_config = path
         return path
 
-    async def send_message(self, session_id: str, message: str) -> str:
-        """Send a message to Claude Code and return the response."""
-        logger.info("Processing message for session %s: %s", session_id, message[:100])
+    async def send_message(self, conversation_key: str, message: str,
+                           *, with_context: bool = True,
+                           is_user_initiated: bool = False,
+                           heartbeat=None, heartbeat_interval: float = 30) -> str:
+        """Send a message to Claude Code and return the response.
+
+        `conversation_key` is a structured key (see `conversations.keys`), e.g.
+        ``discord:dm:123`` or ``monitor:cluster-health``. When `with_context` is
+        set, the distilled local + global context is prepended to the message
+        (no-op until those memory contexts exist). `is_user_initiated` marks a
+        genuine inbound user message — only those update last-activity and wake
+        the introspector (agent-initiated sends, e.g. coaching, must not).
+
+        `heartbeat`, if given, is an async callback ``cb(elapsed_seconds)`` invoked
+        every `heartbeat_interval` s while the run is in flight (long-task UX).
+        """
+        logger.info("Processing message for %s: %s", conversation_key, message[:100])
 
         async with self._lock:
-            session = self._get_or_create_session(session_id)
+            conv = self.registry.get_or_create(conversation_key)
+            if is_user_initiated:
+                self.registry.touch(conversation_key)
+            ACTIVE_SESSIONS.set(self.registry.count())
+
+        # Signal genuine user activity (wakes the introspector / resets backoff).
+        if is_user_initiated and keys.is_user(conversation_key):
+            for cb in self._activity_listeners:
+                try:
+                    cb()
+                except Exception as e:
+                    logger.warning("activity listener error: %s", e)
+
+        # Prepend distilled local + global context (bounded, no-op if absent)
+        prompt = injector.inject(conversation_key, message) if with_context else message
 
         # Detect active services
         active_services = get_active_services()
@@ -83,7 +117,7 @@ class ClaudeRunner:
 
         cmd = [
             "claude",
-            "-p", message,
+            "-p", prompt,
             "--output-format", "json",
             "--max-turns", MAX_TURNS,
             "--max-budget-usd", MAX_BUDGET,
@@ -100,13 +134,15 @@ class ClaudeRunner:
             cmd.extend(["--allowedTools", allowed])
 
         # Resume existing conversation
-        if session.claude_session_id:
-            cmd.extend(["--resume", session.claude_session_id])
+        if conv.claude_session_id:
+            cmd.extend(["--resume", conv.claude_session_id])
 
         logger.info("Running: %s (cwd=%s)", " ".join(cmd[:6]) + " ...", JARVIS_PROJECT_DIR)
 
         env = os.environ.copy()
 
+        hb_task = (asyncio.create_task(self._heartbeat_loop(heartbeat, heartbeat_interval))
+                   if heartbeat else None)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -131,24 +167,42 @@ class ClaudeRunner:
 
             response_text = self._parse_claude_output(output, stderr_text)
 
-            # Capture session ID for conversation continuity
+            # Capture session ID for conversation continuity (persisted)
             try:
                 result = json.loads(output)
                 claude_sid = result.get("session_id")
                 if claude_sid:
                     async with self._lock:
-                        session.claude_session_id = claude_sid
+                        self.registry.record_session_id(conversation_key, claude_sid)
             except (json.JSONDecodeError, AttributeError):
                 pass
 
             return response_text
 
         except asyncio.TimeoutError:
-            logger.error("Claude Code timeout for session %s", session_id)
+            logger.error("Claude Code timeout for %s", conversation_key)
             return f"Timeout: Claude Code n'a pas répondu dans les {TIMEOUT} secondes."
         except Exception as e:
             logger.error("Claude Code exception: %s", e)
             return f"Erreur interne: {e}"
+        finally:
+            if hb_task:
+                hb_task.cancel()
+
+    @staticmethod
+    async def _heartbeat_loop(callback, interval: float):
+        """Invoke `callback(elapsed_seconds)` every `interval` s until cancelled."""
+        elapsed = 0.0
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                elapsed += interval
+                try:
+                    await callback(elapsed)
+                except Exception as e:
+                    logger.debug("heartbeat callback error: %s", e)
+        except asyncio.CancelledError:
+            pass
 
     @staticmethod
     def _parse_claude_output(output: str, stderr_text: str = "") -> str:
@@ -194,7 +248,7 @@ class ClaudeRunner:
         logger.warning("Unexpected Claude output format: %s", output[:200])
         return "Désolé, je n'ai pas pu traiter cette demande. Réessaie."
 
-    def clear_session(self, session_id: str) -> None:
-        """Clear a conversation session."""
-        if self.sessions.pop(session_id, None) is not None:
-            ACTIVE_SESSIONS.dec()
+    def clear_session(self, conversation_key: str) -> None:
+        """Drop a conversation (forgets its Claude session id)."""
+        if self.registry.clear(conversation_key):
+            ACTIVE_SESSIONS.set(self.registry.count())

@@ -18,16 +18,19 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 
+from conversations import keys
 from metrics import MONITOR_CHECKS_TOTAL, MONITOR_CHECK_DURATION_SECONDS, MONITOR_CHECK_PAUSED
 from services import is_monitor_check_available
 
-logger = logging.getLogger(__name__)
+from . import quiet
 
-# Monitoring session (separate from user conversations)
-MONITOR_SESSION = "jarvis-monitor"
+logger = logging.getLogger(__name__)
 
 # How often to check if an alert has been acknowledged (seconds)
 PAUSED_POLL_INTERVAL = 60
+
+# Track A — firm cadence floor (minutes): infra checks never run faster than this.
+MONITOR_FLOOR_MIN = int(os.getenv("JARVIS_MONITOR_FLOOR_MIN", "15"))
 
 
 @dataclass
@@ -249,10 +252,19 @@ class Monitor:
 
             MONITOR_CHECK_PAUSED.labels(check=check.name).set(0)
 
+            # --- Night mode: suppress proactive checks during quiet hours ---
+            # (reactive responses to user messages are unaffected). Daily-scheduled
+            # checks keep their own clock and are not gated here.
+            if not check.daily_at and quiet.in_quiet_hours(datetime.now()):
+                secs = quiet.seconds_until_quiet_end(datetime.now())
+                logger.debug("Check %s: quiet hours, sleeping %.0fs", check.name, secs)
+                await asyncio.sleep(max(secs, 60))
+                continue
+
             # --- Run the check ---
             try:
                 logger.debug("Running check: %s", check.name)
-                session_id = f"{MONITOR_SESSION}-{check.name}"
+                session_id = keys.monitor(check.name)
                 with MONITOR_CHECK_DURATION_SECONDS.labels(check=check.name).time():
                     response = await self.claude_runner.send_message(
                         session_id, check.prompt
@@ -295,7 +307,9 @@ class Monitor:
             if check.daily_at:
                 await self._sleep_until_daily(check.daily_at)
             else:
-                await asyncio.sleep(check.interval_minutes * 60)
+                # Enforce the firm cadence floor (Track A does not back off).
+                minutes = max(check.interval_minutes, MONITOR_FLOOR_MIN)
+                await asyncio.sleep(minutes * 60)
 
     @staticmethod
     async def _sleep_until_daily(daily_at: str):

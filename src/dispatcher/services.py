@@ -19,6 +19,7 @@ SERVICE_REQUIREMENTS = {
     "homeassistant": {"type": "env", "vars": ["HA_URL", "HA_TOKEN"]},
     "grafana-prometheus": {"type": "env", "vars": ["PROMETHEUS_URL"]},
     "git": {"type": "env", "vars": ["GIT_REPOS"]},
+    "git-write": {"type": "env", "vars": ["GIT_REPOS", "GITHUB_TOKEN"]},
     "planka": {"type": "env", "vars": ["PLANKA_URL", "PLANKA_USER", "PLANKA_PASSWORD"]},
     "miniflux": {"type": "env", "vars": ["MINIFLUX_URL", "MINIFLUX_API_KEY"]},
     "immich": {"type": "env", "vars": ["IMMICH_URL", "IMMICH_API_KEY"]},
@@ -34,6 +35,8 @@ SERVICE_REQUIREMENTS = {
     "alertmanager": {"type": "env", "vars": ["ALERTMANAGER_URL"]},
     "booklore": {"type": "env", "vars": ["BOOKLORE_URL", "BOOKLORE_USER", "BOOKLORE_PASSWORD"]},
     "memory": {"type": "always"},
+    "skills": {"type": "always"},
+    "discord-write": {"type": "env", "vars": ["DISCORD_BOT_TOKEN"]},
 }
 
 # Monitor check -> required services mapping

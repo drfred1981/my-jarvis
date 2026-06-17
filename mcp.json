@@ -20,6 +20,10 @@
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/git/server.py"]
     },
+    "git-write": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/git-write/server.py"]
+    },
     "planka": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/planka/server.py"]
@@ -79,6 +83,14 @@
     "memory": {
       "command": "python3",
       "args": ["/opt/jarvis/app/src/mcp-servers/memory/server.py"]
+    },
+    "skills": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/skills/server.py"]
+    },
+    "discord-write": {
+      "command": "python3",
+      "args": ["/opt/jarvis/app/src/mcp-servers/discord-write/server.py"]
     }
   }
 }

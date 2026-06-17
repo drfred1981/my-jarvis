@@ -8,12 +8,19 @@ echo "=== Jarvis starting ==="
 SEED_DIR="/opt/jarvis/seed"
 HOME_DIR="/home/jarvis"
 
-for f in CLAUDE.md mcp.json; do
-    if [ ! -f "$HOME_DIR/$f" ] && [ -f "$SEED_DIR/$f" ]; then
-        echo "Seeding $f to $HOME_DIR/"
-        cp "$SEED_DIR/$f" "$HOME_DIR/$f"
-    fi
-done
+# CLAUDE.md and mcp.json are CONFIG (source of truth = image): merge the seed
+# INTO the runtime file at every boot so redeploys apply doctrine + new MCP
+# servers, while preserving runtime/operator-only additions.
+#   - mcp.json : union of mcpServers (seed wins per key, volume-only kept)
+#   - CLAUDE.md: section merge by '## ' (seed sections win, volume-only kept)
+if [ -f "$SEED_DIR/CLAUDE.md" ]; then
+    echo "Merging CLAUDE.md from seed"
+    python3 /opt/jarvis/seed_merge.py "$SEED_DIR/CLAUDE.md" "$HOME_DIR/CLAUDE.md" md
+fi
+if [ -f "$SEED_DIR/mcp.json" ]; then
+    echo "Merging mcp.json from seed"
+    python3 /opt/jarvis/seed_merge.py "$SEED_DIR/mcp.json" "$HOME_DIR/mcp.json" json
+fi
 
 if [ ! -d "$HOME_DIR/.claude" ] && [ -d "$SEED_DIR/.claude" ]; then
     echo "Seeding .claude/ to $HOME_DIR/"
@@ -31,6 +38,22 @@ if [ -d "$MEMORY_SEED" ]; then
         if [ ! -f "$MEMORY_DIR/$basename" ]; then
             echo "Seeding memory/$basename"
             cp "$f" "$MEMORY_DIR/$basename"
+        fi
+    done
+fi
+
+# Seed skills library (new skills only, never overwrite runtime-created/edited ones)
+# Skills live on the persistent volume so create_skill / attach_skill survive restarts.
+SKILLS_SEED="$SEED_DIR/skills"
+SKILLS_DIR="${JARVIS_SKILLS_DIR:-$HOME_DIR/skills}"
+if [ -d "$SKILLS_SEED" ]; then
+    mkdir -p "$SKILLS_DIR"
+    for d in "$SKILLS_SEED"/*/; do
+        [ -d "$d" ] || continue
+        name="$(basename "$d")"
+        if [ ! -e "$SKILLS_DIR/$name" ]; then
+            echo "Seeding skill $name"
+            cp -r "$d" "$SKILLS_DIR/$name"
         fi
     done
 fi
