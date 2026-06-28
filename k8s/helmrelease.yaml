@@ -15,6 +15,13 @@ spec:
         name: bjw-s
         namespace: flux-system
   values:
+    # Bun (Claude Code runtime) segfaults on Linux kernel 7.0.x (Ubuntu 26.04 nodes).
+    # Pin Jarvis to kernel-6.8 nodes labelled `bun-compatible=true`.
+    # Remove once a Claude Code release bundles a Bun that supports kernel 7.0.
+    #   kubectl label node <nodes...> bun-compatible=true
+    defaultPodOptions:
+      nodeSelector:
+        bun-compatible: "true"
     controllers:
       main:
         containers:
