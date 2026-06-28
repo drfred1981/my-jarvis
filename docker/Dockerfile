@@ -56,8 +56,9 @@ RUN curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSIO
 # --- task (task runner / Taskfile) ---
 RUN sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-# --- Claude Code ---
-RUN npm install -g @anthropic-ai/claude-code
+# --- Claude Code (pinned; stable channel — bump to update, e.g. 2.1.195 = latest) ---
+ARG CLAUDE_CODE_VERSION=2.1.181
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # --- kubectl-mcp-server (advanced K8s diagnostics, security, Helm via MCP) ---
 RUN npm install -g kubectl-mcp-server
