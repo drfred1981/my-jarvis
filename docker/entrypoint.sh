@@ -58,6 +58,11 @@ if [ -d "$SKILLS_SEED" ]; then
     done
 fi
 
+# Nettoie les lock files git orphelins d'un run précédent (index.lock, config.lock…)
+# Le sandbox Claude bloque leur suppression depuis l'intérieur d'une session active,
+# donc on le fait ici au démarrage, avant que le dispatcher ne lance quoi que ce soit.
+find "${HOME_DIR}/git-cache" -name "*.lock" -delete 2>/dev/null || true
+
 # Install/update Python dependencies
 if [ -f /opt/jarvis/app/requirements.txt ]; then
     echo "Installing Python dependencies..."
