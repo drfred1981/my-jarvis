@@ -5,14 +5,24 @@ Manages multiple git repositories independently:
 - View git history, branches, diffs
 - Supports any git hosting (GitHub, GitLab, Gitea, etc.)
 
-Repos are configured via GIT_REPOS env var (two formats supported):
+Repos are configured via GIT_REPOS env var (three formats supported):
   # Legacy format (string value = URL, default branch):
   GIT_REPOS='{"my-jarvis":"https://github.com/user/my-jarvis.git"}'
 
-  # New format (object value with url and optional branch):
-  GIT_REPOS='{"my-jarvis":{"url":"https://github.com/user/my-jarvis.git","branch":"develop"}}'
+  # Object format (url + optional fields):
+  GIT_REPOS='{
+    "my-jarvis": {
+      "url": "https://github.com/user/my-jarvis.git",
+      "branch": "develop",
+      "aliases": ["jarvis", "bot", "code"],
+      "description": "Source code for the Jarvis bot"
+    }
+  }'
 
   # Mixed format is also supported.
+
+The `aliases` field allows resolving a repo by alternative names.
+The `description` field is informational (shown in list_repos).
 
 Repos are cloned to $JARVIS_PROJECT_DIR/git-cache/ (persistent volume)
 and refreshed periodically via pull --rebase.
@@ -52,9 +62,9 @@ _REFRESH_INTERVAL = int(os.getenv("GIT_REFRESH_INTERVAL", "300"))  # 5 min
 def _load_repos() -> dict[str, dict]:
     """Load repos from GIT_REPOS env var.
 
-    Supports two value formats per repo:
-    - String value (legacy): "https://..." → {"url": "https://...", "branch": ""}
-    - Object value (new):    {"url": "https://...", "branch": "develop"}
+    Supports three value formats per repo:
+    - String value (legacy): "https://..." → {url, branch="", aliases=[], description=""}
+    - Object value:          {"url": "...", "branch": "...", "aliases": [...], "description": "..."}
     """
     repos: dict[str, dict] = {}
     repos_json = os.getenv("GIT_REPOS", "")
@@ -64,9 +74,14 @@ def _load_repos() -> dict[str, dict]:
             raw = json.loads(repos_json)
             for name, value in raw.items():
                 if isinstance(value, str):
-                    repos[name] = {"url": value, "branch": ""}
+                    repos[name] = {"url": value, "branch": "", "aliases": [], "description": ""}
                 elif isinstance(value, dict):
-                    repos[name] = {"url": value["url"], "branch": value.get("branch", "")}
+                    repos[name] = {
+                        "url": value["url"],
+                        "branch": value.get("branch", ""),
+                        "aliases": value.get("aliases", []),
+                        "description": value.get("description", ""),
+                    }
                 else:
                     logger.warning("Skipping repo %s: unexpected value type %s", name, type(value))
             logger.info("Parsed %d repos: %s", len(repos), list(repos.keys()))
@@ -163,13 +178,24 @@ def _get_default_branch(repo_dir: Path) -> str:
 
 
 def _resolve_repo(name: str) -> tuple[str, str, str] | None:
-    """Resolve a repo name to (name, url, configured_branch)."""
+    """Resolve a repo name to (name, url, configured_branch).
+
+    Resolution order:
+    1. Auto-select if only one repo configured
+    2. Exact match on primary name
+    3. Exact match on any alias
+    4. Partial/substring match on primary name
+    """
     if not name and len(REPOS) == 1:
         k = next(iter(REPOS))
         return k, REPOS[k]["url"], REPOS[k]["branch"]
     if name in REPOS:
         return name, REPOS[name]["url"], REPOS[name]["branch"]
-    # Partial match
+    # Alias exact match
+    for k, v in REPOS.items():
+        if name in v.get("aliases", []):
+            return k, v["url"], v["branch"]
+    # Partial match on primary name
     matches = [(k, v) for k, v in REPOS.items() if name in k]
     if len(matches) == 1:
         k, v = matches[0]
@@ -183,7 +209,13 @@ def list_repos() -> str:
     if not REPOS:
         return "No repositories configured. Set GIT_REPOS env var."
     return json.dumps([
-        {"name": k, "url": v["url"], "branch": v["branch"] or "(default)"}
+        {
+            "name": k,
+            "url": v["url"],
+            "branch": v["branch"] or "(default)",
+            "aliases": v.get("aliases", []),
+            "description": v.get("description", ""),
+        }
         for k, v in REPOS.items()
     ], indent=2)
 
