@@ -4,6 +4,17 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
 
 ## [Non publié]
 
+### Fixed
+- **Continuité de conversation perdue (contexte oublié).** Le runtime passait
+  `--session-id` à *chaque* appel `claude -p` et **jamais `--resume`** : sur la version
+  `claude` déployée, réutiliser un `--session-id` ne reprenait pas la session → contexte
+  oublié à chaque tour. Désormais une conversation utilisateur **établit** sa session au
+  1ᵉʳ tour (Claude génère l'id, qu'on **capture**), puis la **reprend via `--resume <id>`**
+  à chaque tour suivant. Un transcript perdu (recréation de pod) **s'auto-répare** en
+  ré-établissant une session neuve. État `session_started` + id réel persistés dans le
+  `ConversationRecord`. Les pistes système (`monitor:*`, `introspection`) restent
+  éphémères.
+
 ### Added
 - **Skill `coach` + redéfinition du coaching.** `coaching` n'est plus une notification
   proactive mais l'**accompagnement** (posture par défaut des conversations utilisateur) :
