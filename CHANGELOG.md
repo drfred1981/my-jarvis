@@ -27,6 +27,21 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
   la mémoire runtime n'est jamais écrasée. `id` requis, `description` optionnelle (inférée
   sinon).
 
+### Fixed
+- **Routage proactif cloisonné par conversation.** Le monitoring (Piste A) et la revue de
+  périmètre ne sont plus diffusés à l'identique dans **tous** les canaux Discord
+  (`notify_all`). Désormais :
+  - le **monitoring** va à son **seul canal dédié** (`JARVIS_MONITOR_CHANNEL_ID`,
+    fallback canal opérateur puis log-only — jamais de broadcast) ;
+  - la **revue de périmètre** (introspection — digest opérateur, plus « coaching équipe »)
+    ne va qu'au canal dédié (`DISCORD_COACHING_CHANNEL_ID`) ou est journalisée — plus de
+    fallback broadcast ;
+  - le **coaching par conversation** (posture coach, cycles deep) est généré avec le contexte
+    local de chaque conversation active et posté **dans cette conversation** via le nouveau
+    primitif `Notifier.notify_conversation()` (qui route vers l'unique destination encodée
+    dans la clé : canal/thread/DM Discord, session web, Synology).
+  Met en œuvre la doctrine d'isolation de sortie + la redéfinition du coaching (`CLAUDE.md`).
+
 ### Changed
 - **Doctrine — adaptation au contexte de chaque conversation.** Ajout dans `CLAUDE.md`
   (system prompt runtime) d'une règle cardinale : la sortie est **cloisonnée par

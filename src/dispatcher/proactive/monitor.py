@@ -1,7 +1,8 @@
 """Proactive monitoring scheduler.
 
 Periodically sends check prompts to Claude Code and dispatches
-alerts to all configured channels when issues are detected.
+alerts to the single dedicated monitoring channel when issues are
+detected (never broadcast into conversation-specific channels).
 Only runs checks for services that are actually configured.
 Pauses checks entirely when an alert is active — resumes only
 after the user acknowledges the alert.
@@ -278,12 +279,14 @@ class Monitor:
                 elif response and check.notify_when_clear:
                     # Always-emit checks (e.g. daily digest): no alert state, no pause.
                     MONITOR_CHECKS_TOTAL.labels(check=check.name, result="clear").inc()
-                    await self.notifier.notify_all(f"🌅 **{check.name}**\n\n{response}")
+                    await self.notifier.notify_monitoring(f"🌅 **{check.name}**\n\n{response}")
                     logger.info("Check %s: digest sent (%d chars)", check.name, len(response))
                 elif response and not self._is_all_clear(response):
                     MONITOR_CHECKS_TOTAL.labels(check=check.name, result="alert").inc()
-                    # Issue detected → notify and pause until acknowledged
-                    await self.notifier.notify_all(
+                    # Issue detected → notify (dedicated monitoring channel only) and
+                    # pause until acknowledged. Monitoring is never broadcast into
+                    # conversation-specific channels.
+                    await self.notifier.notify_monitoring(
                         f"🔔 **Monitoring - {check.name}**\n\n{response}\n\n"
                         f"_Check en pause. Acquitter avec `POST /api/alerts/{check.name}/ack`_"
                     )
