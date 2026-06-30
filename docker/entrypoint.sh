@@ -42,21 +42,13 @@ if [ -d "$MEMORY_SEED" ]; then
     done
 fi
 
-# Seed skills library (new skills only, never overwrite runtime-created/edited ones)
-# Skills live on the persistent volume so create_skill / attach_skill survive restarts.
-SKILLS_SEED="$SEED_DIR/skills"
-SKILLS_DIR="${JARVIS_SKILLS_DIR:-$HOME_DIR/skills}"
-if [ -d "$SKILLS_SEED" ]; then
-    mkdir -p "$SKILLS_DIR"
-    for d in "$SKILLS_SEED"/*/; do
-        [ -d "$d" ] || continue
-        name="$(basename "$d")"
-        if [ ! -e "$SKILLS_DIR/$name" ]; then
-            echo "Seeding skill $name"
-            cp -r "$d" "$SKILLS_DIR/$name"
-        fi
-    done
-fi
+# Skills are read as two layers (figé/amendment), NOT seeded onto the volume:
+#   - repo (frozen)   : $SEED_DIR/skills (image, read-only) — source of truth, refreshed
+#                       every deploy, wins on name collision. Read in place; never copied.
+#   - runtime (amend) : $JARVIS_SKILLS_DIR (volume) — where create_skill writes; survives
+#                       restarts, layered on top, can never shadow a repo skill.
+# We only ensure the runtime dir exists so create_skill has somewhere to write.
+mkdir -p "${JARVIS_SKILLS_DIR:-$HOME_DIR/skills}"
 
 # Nettoie les lock files git orphelins d'un run précédent (index.lock, config.lock…)
 # Le sandbox Claude bloque leur suppression depuis l'intérieur d'une session active,

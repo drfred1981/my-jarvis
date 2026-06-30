@@ -23,9 +23,15 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_DIR", "/home/jarvis/skills"))
+SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_DIR", "/home/jarvis/skills"))           # runtime (volume)
+SEED_SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_SEED_DIR", "/opt/jarvis/seed/skills"))  # repo (frozen, RO)
 MEMORY_DIR = Path(os.getenv("JARVIS_MEMORY_DIR", "/home/jarvis/memory"))
 ATTACH_DIR = MEMORY_DIR / "skill-attachments"
+
+
+def _skill_bases() -> list[Path]:
+    """Skill base dirs in precedence order: repo (frozen) first, runtime second."""
+    return [SEED_SKILLS_DIR, SKILLS_DIR]
 
 MAX_CATALOG_CHARS = 2500
 MAX_SKILL_CHARS = 2000
@@ -52,23 +58,33 @@ def _parse_frontmatter(text: str) -> dict:
 
 
 def _skill_file(name: str) -> Path:
+    """Resolve a skill's SKILL.md, repo (frozen) taking precedence over runtime."""
+    for base in _skill_bases():
+        p = base / name / "SKILL.md"
+        if p.is_file():
+            return p
     return SKILLS_DIR / name / "SKILL.md"
 
 
 def list_catalog() -> list[tuple[str, str]]:
-    """(name, description) for every skill in the library."""
+    """(name, description) for every skill — repo (frozen) + runtime union."""
     out: list[tuple[str, str]] = []
-    if not SKILLS_DIR.is_dir():
-        return out
-    for d in sorted(SKILLS_DIR.iterdir()):
-        f = d / "SKILL.md"
-        if not f.is_file():
+    seen: set[str] = set()
+    for base in _skill_bases():
+        if not base.is_dir():
             continue
-        try:
-            meta = _parse_frontmatter(f.read_text(encoding="utf-8"))
-        except OSError:
-            continue
-        out.append((meta.get("name", d.name), meta.get("description", "")))
+        for d in sorted(base.iterdir()):
+            if d.name in seen:
+                continue  # repo wins over a same-name runtime skill
+            f = d / "SKILL.md"
+            if not f.is_file():
+                continue
+            try:
+                meta = _parse_frontmatter(f.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+            seen.add(d.name)
+            out.append((meta.get("name", d.name), meta.get("description", "")))
     return out
 
 
