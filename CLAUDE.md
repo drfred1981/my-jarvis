@@ -386,7 +386,8 @@ requête, `get_active_mcp_config()` **filtre `mcp.json`** pour ne garder que les
 (outils built-in + `mcp__<service>__*`). Conséquence : démarrer sans token = ce serveur
 n'existe pas pour Claude, silencieusement.
 
-**Ajouter un serveur MCP = toucher 3 endroits** (sinon il ne se charge pas) :
+**Ajouter un serveur MCP = toucher 3 endroits** (sinon il ne se charge pas ; ~26 serveurs
+sous `src/mcp-servers/`) :
 1. `src/mcp-servers/<nom>/server.py` — pattern `FastMCP("<nom>")` + `@mcp.tool()`, config via env vars, `mcp.run()` en stdio (voir `gatus/server.py` comme gabarit).
 2. `mcp.json` — entrée `{"command": "python3", "args": [".../server.py"]}`.
 3. `services.py` `SERVICE_REQUIREMENTS` — déclarer les env vars requises (sinon jamais activé).
@@ -397,19 +398,44 @@ push-only) → `ClaudeRunner.send_message()` → subprocess `claude` → parse J
 (`_parse_claude_output`, gère `error_max_turns`) → réponse. Les WebSockets servent uniquement
 au **push** d'alertes, jamais à l'entrée utilisateur.
 
-**Monitoring proactif** (`monitor.py`) : checks périodiques (`interval_minutes`) ou planifiés
-(`daily_at="HH:MM"`) qui envoient un *prompt* à Claude sur une session dédiée
-(`jarvis-monitor`). Un check est skippé si ses services requis ne sont pas configurés
-(`is_monitor_check_available`). Sur alerte, le check se **met en pause** jusqu'à acquittement
-(`POST /api/alerts/{name}/ack`). La logique de dédup/backoff côté *contenu* est déléguée au
-prompt (voir sections backoff/anti-doublons plus haut), pas au code Python.
+**Proactivité = `src/dispatcher/proactive/`** (cadence pilotée par le code, pas par le prompt) :
+- `monitor.py` — **Piste A** : checks infra périodiques (`interval_minutes`) ou planifiés
+  (`daily_at="HH:MM"`) envoyés en *prompt* sur une session dédiée (`jarvis-monitor`). Un check
+  est skippé si ses services requis ne sont pas configurés (`is_monitor_check_available`) ;
+  sur alerte il se **met en pause** jusqu'à acquittement (`POST /api/alerts/{name}/ack`).
+- `introspector.py` — **Piste B** : cycles d'introspection à timer adaptatif (backoff
+  exponentiel, reset sur activité chat) avec profondeur light/medium/deep.
+- `quiet.py` — fenêtre nuit 00h–07h qui suspend les deux pistes.
+- `prompts.py` — gabarits de prompts injectés à Claude pour ces cycles.
+La dédup *de contenu* reste déléguée au prompt (le code décide *quand*, Claude décide *quoi dire*).
+
+**Routage des conversations = `conversations/` + `context/`.** `conversations/keys.py` fabrique
+une clé structurée par contexte (`discord:dm:<id>`, `web:<session>`, `introspection`,
+`monitor:<check>`…) ; `registry.py` suit l'activité par conversation (et exclut les pistes
+système du calcul d'activité utilisateur). Avant chaque tour, `context/injector.py` **préfixe**
+le message d'un bloc de contexte lu directement sur le NFS mémoire (local `conversations/<clé>`
++ global `global/state`) — sans dépenser d'appel MCP ; `context/skills.py` injecte le catalogue
+de skills (hot-reload). Les canaux d'entrée vivent dans `channels/` (`discord_bot.py`,
+`synology_chat.py`, `web_socket.py`) ; `notifier.py` pousse les alertes sortantes.
+
+**UI web statique** : `src/web-ui/` (HTML/CSS/JS vanilla) est servie par `main.py` sur `/`
+(et `/static`), elle parle au dispatcher via `POST /api/chat` et le WebSocket `/ws/{session_id}`.
 
 **Déploiement / seeding** : l'app vit dans `/opt/jarvis/app` (image), mais le runtime tourne
-avec `cwd=/home/jarvis` (volume persistant). `entrypoint.sh` *seed* `CLAUDE.md`, `mcp.json`,
-`.claude/`, `memory/*.md` depuis `/opt/jarvis/seed` vers `/home/jarvis` **uniquement s'ils
-n'existent pas** (ne jamais écraser l'état runtime). Les repos git sont pré-clonés par le
-**dispatcher** (`_preclone_git_repos`, thread au startup), pas par le serveur MCP git — car
-les serveurs MCP sont des subprocess éphémères de `claude -p`.
+avec `cwd=/home/jarvis` (volume persistant). Au boot, `entrypoint.sh` ne copie plus bêtement :
+il **merge** la doctrine de l'image dans le volume via `docker/seed_merge.py` (l'image =
+source de vérité). Conséquence pratique : **éditer ce CLAUDE.md ou `mcp.json` dans le repo
+se propage au prochain redéploiement** sans perdre les ajouts runtime/opérateur :
+- `CLAUDE.md` — merge par sections `## ` (préambule + sections du seed gagnent ; sections
+  présentes seulement côté volume conservées en fin) ;
+- `mcp.json` — union de `mcpServers` (serveur du seed ajouté/maj, serveur volume-only gardé) ;
+- `memory/*.md` — copiés *seulement si absents* (jamais d'écrasement de l'état runtime).
+Les repos git sont pré-clonés par le **dispatcher** (`_preclone_git_repos`, thread au startup),
+pas par le serveur MCP git — car les serveurs MCP sont des subprocess éphémères de `claude -p`.
+
+Le déploiement cluster est GitOps : `k8s/` contient `helmrelease.yaml`, `externalsecret.yaml`
+et `kustomization.yaml` (FluxCD réconcilie l'image GHCR). Le design de la refonte multi-conversation
+est documenté dans `docs/agent-redesign.md`.
 
 **Observabilité** : `metrics.py` expose des compteurs/histogrammes Prometheus sur `/metrics`
 (montés via `make_asgi_app`). Dashboard Grafana fourni dans `grafana/`.
