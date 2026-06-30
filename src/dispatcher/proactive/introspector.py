@@ -10,11 +10,15 @@ Owns the *cadence* of proactive introspection (the code, not the prompt):
 When users are actively chatting, introspection is skipped entirely (stay reactive,
 don't burn tokens). The "worth saying?" judgment and content live in `prompts`.
 
-Coaching delivery:
-  - *team*       : every cycle that surfaces something → `notifier.notify_coaching`.
-  - *individual* : deep cycles only → for each recently-active DM-able user, run a
-                   coaching prompt inside that user's own conversation context and DM
-                   it via `notifier.notify_user` (in addition to team coaching).
+Coaching delivery (per-conversation isolation doctrine):
+  - *team review* : every cycle that surfaces something updates `global/state` and is
+                    posted ONLY to the dedicated coaching channel (`notify_coaching`),
+                    never broadcast into conversation-specific channels.
+  - *per-conversation* : deep cycles only → for each recently-active user conversation,
+                    run a coaching prompt inside THAT conversation's own local context
+                    and post the tailored result back INTO that conversation
+                    (`notifier.notify_conversation`), so suggestions are about that
+                    conversation's own subject/repo — not generic.
 """
 
 from __future__ import annotations
@@ -160,20 +164,25 @@ class Introspector:
             INTROSPECTION_KEY, prompts.for_depth(depth), with_context=True
         )
         if response and not is_clear(response) and not _is_error(response):
-            await self.notifier.notify_coaching(f"🧭 **Coaching équipe**\n\n{response}")
-            logger.info("Introspection: team coaching posted (%d chars)", len(response))
+            # Team perimeter review → dedicated coaching channel only (or log-only).
+            # Never broadcast into conversation-specific channels.
+            await self.notifier.notify_coaching(f"🧭 **Revue d'équipe**\n\n{response}")
+            logger.info("Introspection: team review posted (%d chars)", len(response))
         # Keep the introspection session bounded (state lives in memory `global/state`).
         self.claude_runner.clear_session(INTROSPECTION_KEY)
 
-        # Individual coaching: deep cycles only.
+        # Per-conversation tailored coaching: deep cycles only.
         if depth == "deep":
-            await self._individual_coaching()
+            await self._per_conversation_coaching()
 
-    async def _individual_coaching(self):
+    async def _per_conversation_coaching(self):
+        """For each recently-active *user* conversation, generate coaching tailored
+        to that conversation's own local context and post it back INTO that
+        conversation (cloisonnement). System tracks are skipped."""
         cutoff = datetime.now(timezone.utc) - timedelta(hours=COACHING_ACTIVE_HOURS)
         for conv in self.registry.list():
-            target = self._dm_target(conv.key)
-            if not target or not conv.last_activity:
+            # Only real user conversations — never monitor:* / introspection.
+            if not keys.is_user(conv.key) or not conv.last_activity:
                 continue
             try:
                 last = datetime.fromisoformat(conv.last_activity)
@@ -181,19 +190,11 @@ class Introspector:
                 continue
             if last < cutoff:
                 continue
+            # Generated WITH this conversation's local context (with_context=True
+            # injects conversations/<key>), so suggestions are about its own subject.
             resp = await self.claude_runner.send_message(
                 conv.key, prompts.USER_COACHING, with_context=True
             )
             if resp and not is_clear(resp) and not _is_error(resp):
-                await self.notifier.notify_user(target, resp)
-                logger.info("Introspection: individual coaching DM → %s", conv.key)
-
-    @staticmethod
-    def _dm_target(key: str):
-        """Return a (kind, ident) DM target for a key, or None if not DM-able."""
-        p = keys.parse(key)
-        if p.channel == "discord" and p.kind == "dm":
-            return ("discord", p.ident)
-        if p.channel == "synology":
-            return ("synology", p.ident)
-        return None
+                await self.notifier.notify_conversation(conv.key, f"🧭 {resp}")
+                logger.info("Introspection: tailored coaching → %s", conv.key)
