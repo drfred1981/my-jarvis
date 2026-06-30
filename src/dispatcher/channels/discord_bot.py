@@ -6,7 +6,7 @@ import os
 
 import discord
 
-from conversations import keys
+from conversations import channel_config, keys
 from metrics import MESSAGES_TOTAL, MESSAGE_DURATION_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -43,11 +43,10 @@ class DiscordBot:
         intents.message_content = True
         self.client = discord.Client(intents=intents)
 
-        # Allowed channel IDs (optional filter)
-        allowed = os.getenv("DISCORD_CHANNEL_IDS", "")
-        self.allowed_channels: set[int] = set()
-        if allowed:
-            self.allowed_channels = {int(ch.strip()) for ch in allowed.split(",") if ch.strip()}
+        # Allowed channel IDs (optional filter). Accepts the structured JSON form
+        # ([{"id","description"}]) or the legacy comma-separated list.
+        self.allowed_channels: set[int] = channel_config.channel_ids(
+            os.getenv("DISCORD_CHANNEL_IDS", ""))
 
         self._register_handlers()
 
