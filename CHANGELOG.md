@@ -34,6 +34,18 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
   spécifique au contexte de la conversation), tandis que le savoir reste **mutualisé**
   via `global/state` (vue d'ensemble, corrélation inter-conversations). Pérenne par
   construction : re-seedée à chaque déploiement par `docker/seed_merge.py`.
+- **Skills : repo figé + amendement runtime (deux couches, lecture en union).** Les skills
+  du repo (image, `JARVIS_SKILLS_SEED_DIR=/opt/jarvis/seed/skills`) sont la **source de
+  vérité figée** — lus en lecture seule, rafraîchis à chaque déploiement, **prioritaires sur
+  collision de nom**. Les skills runtime (`create_skill`, volume `JARVIS_SKILLS_DIR`) sont un
+  **amendement** qui s'ajoute par-dessus sans jamais masquer un skill du repo. Avant, le
+  seeding copiait les skills sur le volume « new only » → un skill repo mis à jour ne se
+  propageait jamais, une édition runtime le masquait (pas figé). Désormais :
+  - `entrypoint.sh` **ne sème plus** les skills sur le volume (lecture en place depuis l'image) ;
+  - `catalog.py` (MCP) et `context/skills.py` (injection) lisent l'**union** des deux dossiers,
+    repo prioritaire ;
+  - `create_skill` **refuse** un nom de skill du repo (→ proposer une MR), et écrit toujours
+    côté runtime.
 
 ### Fixed
 - **Warning `no stdin data received in 3s`** : le subprocess `claude` reçoit désormais

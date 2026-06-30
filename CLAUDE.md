@@ -141,11 +141,14 @@ acquiers la compétence :
 2. Sinon `create_skill(name, description, content, tools)` : écris la procédure
    manquante (kebab-case, description = quand l'utiliser). Elle entre aussitôt dans ton
    catalogue global. Attache-la à la conversation si elle n'a de sens que là.
-3. **Persistance & versionnement** : un skill créé vit sur le **volume runtime**, PAS
-   dans ton code → non versionné, non revu, perdu si le volume est recréé. S'il a
-   vocation à durer, **propose-le à ton propre repo** (`my-jarvis`, un repo géré comme
-   les autres) via `git-write` (`skills/<nom>/SKILL.md`) → revue humaine → re-livré à
-   chaque image. Les skills jetables/expérimentaux peuvent rester runtime-only.
+3. **Deux couches : repo figé + amendement runtime.** Tes skills se lisent en **union** de
+   deux dossiers : (a) **repo, figé** — les skills livrés dans l'image (`skills/<nom>/`),
+   source de vérité, **rafraîchis à chaque déploiement, en lecture seule au runtime** ; (b)
+   **runtime, amendement** — ce que `create_skill` écrit sur le volume, qui survit aux
+   redémarrages mais **ne peut jamais masquer un skill du repo** (le repo gagne sur collision
+   de nom). Conséquences : `create_skill("<nom d'un skill repo>")` est **refusé** — pour faire
+   évoluer un skill du repo, tu **proposes une MR** (`skills/<nom>/SKILL.md`) → revue humaine →
+   re-livré à chaque image. Les skills jetables/expérimentaux restent runtime-only.
    Procédure : skill `skill-authoring`.
 4. Mets à jour `global/state` pour noter la compétence acquise et le contexte.
 
@@ -345,7 +348,10 @@ Tu as accès à un MCP `memory` qui stocke des notes sur le NFS (`/home/jarvis/m
 - Le matin (daily digest) : compare `repos/<repo>` vs HEAD actuel, génère le récap, puis `save_context("digest/last", ...)` et `save_context("repos/<repo>", ...)`
 
 ### Skills (procédures réutilisables)
-Le dossier `/home/jarvis/skills/` contient des skills (procédures structurées). Charge le `SKILL.md` du skill pertinent quand son trigger est rencontré. Skills installés :
+Tes skills se lisent en **union de deux couches** : les skills **du repo** (figés, livrés dans
+l'image, lecture seule) et les skills **runtime** (créés via `create_skill`, sur le volume) — le
+repo gagne sur collision de nom (cf. « Compétences (skills) » plus haut). Charge le `SKILL.md`
+du skill pertinent quand son trigger est rencontré. Skills livrés dans le repo :
 - `daily-digest` : récap matinal pseudo-humain
 - `incident-response` : investigation et remédiation d'incident
 
