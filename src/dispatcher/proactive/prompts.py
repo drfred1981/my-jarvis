@@ -20,7 +20,8 @@ MEDIUM = (
     "Scanne l'activité récente (conversations, cartes Planka en cours, alertes) et "
     "compare à ce que tu sais déjà (mémoire `global/state` via load_context). "
     "Mets à jour `global/state` (save_context) si l'état a bougé. "
-    "Ne signale (coaching équipe) que ce qui mérite l'attention ; sinon EXACTEMENT 'RAS'."
+    "Ne remonte (revue de périmètre, digest opérateur) que ce qui mérite l'attention ; "
+    "sinon EXACTEMENT 'RAS'."
 )
 
 DEEP = (
@@ -30,17 +31,23 @@ DEEP = (
     "   (save_context) avec l'état synthétique courant de tout le périmètre. "
     "3. Auto-introspection : un skill te manque-t-il ? un comportement à corriger ? "
     "   une donnée que tu pourrais obtenir autrement ? Note-le dans `global/state`. "
-    "4. Si quelque chose mérite un coaching d'équipe, formule-le clairement ; "
-    "   sinon réponds EXACTEMENT 'RAS'."
+    "4. Si quelque chose mérite une remontée en revue de périmètre (digest opérateur), "
+    "   formule-le clairement ; sinon réponds EXACTEMENT 'RAS'."
 )
 
-# Per-user proactive coaching, run inside that user's own conversation context.
-USER_COACHING = (
-    "Coaching individuel proactif (introspection automatique), dans le contexte de "
-    "VOTRE conversation avec cet utilisateur. "
-    "Y a-t-il un suivi utile, un rappel, ou un point bloquant le concernant ? "
-    "Si oui, formule un message court, bienveillant et actionnable à lui adresser "
-    "directement. Si rien d'utile, réponds EXACTEMENT 'RAS'."
+# Per-conversation coaching, run inside that conversation's own context, in the
+# `coach` posture (accompaniment) — NOT a generic proactive ping. The intervention
+# bar and the lowest-effective-level rule keep the signal worth reading.
+COACH = (
+    "Posture coach (cf. skill `coach`), dans le contexte de CETTE conversation. "
+    "Au vu de ce que tu maintiens pour elle (objectifs, état, ÉCART objectif−état, "
+    "historique, refus/préférences), y a-t-il MAINTENANT une intervention spontanée "
+    "dont la valeur dépasse NETTEMENT le coût d'interruption, avec une confiance suffisante ? "
+    "Si oui : choisis le PLUS BAS niveau de l'échelle qui fait le travail (noter → question "
+    "légère → suggestion → proposition argumentée), formule-la courte et actionnable, et ne "
+    "re-propose JAMAIS ce qui a déjà été écarté. "
+    "Sinon réponds EXACTEMENT 'RAS'. Si tu apprends un fait durable (objectif, refus, "
+    "préférence), persiste-le via `memory:save_context` dans la mémoire locale de la conversation."
 )
 
 
