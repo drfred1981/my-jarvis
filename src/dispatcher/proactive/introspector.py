@@ -10,11 +10,15 @@ Owns the *cadence* of proactive introspection (the code, not the prompt):
 When users are actively chatting, introspection is skipped entirely (stay reactive,
 don't burn tokens). The "worth saying?" judgment and content live in `prompts`.
 
-Coaching delivery:
-  - *team*       : every cycle that surfaces something → `notifier.notify_coaching`.
-  - *individual* : deep cycles only → for each recently-active DM-able user, run a
-                   coaching prompt inside that user's own conversation context and DM
-                   it via `notifier.notify_user` (in addition to team coaching).
+Two distinct deliveries (per-conversation isolation doctrine):
+  - *perimeter digest* : every cycle that surfaces something updates `global/state`
+                    and posts an OPERATOR digest to the dedicated channel only
+                    (`notify_coaching`) — never broadcast, and NOT coaching.
+  - *coach pass* : deep cycles only → for each recently-active user conversation,
+                    apply the `coach` posture (accompaniment) inside THAT
+                    conversation's own local context and post the intervention back
+                    INTO it (`notify_conversation`). The value≫cost bar in the
+                    `coach` prompt means most cycles return RAS and post nothing.
 """
 
 from __future__ import annotations
@@ -155,25 +159,34 @@ class Introspector:
         logger.info("Introspection cycle: depth=%s (idle=%.0fmin, next=%dmin)",
                     depth, idle_min, min(self._interval_min * 2, CAP_MIN))
 
-        # Team introspection on the dedicated introspection session.
+        # Perimeter introspection on the dedicated introspection session. Its job
+        # is to maintain `global/state`; what it surfaces is an OPERATOR digest, not
+        # coaching → dedicated operator channel only (or log-only), never broadcast.
         response = await self.claude_runner.send_message(
             INTROSPECTION_KEY, prompts.for_depth(depth), with_context=True
         )
         if response and not is_clear(response) and not _is_error(response):
-            await self.notifier.notify_coaching(f"🧭 **Coaching équipe**\n\n{response}")
-            logger.info("Introspection: team coaching posted (%d chars)", len(response))
+            await self.notifier.notify_coaching(f"🔭 **Introspection — revue de périmètre**\n\n{response}")
+            logger.info("Introspection: perimeter digest posted (%d chars)", len(response))
         # Keep the introspection session bounded (state lives in memory `global/state`).
         self.claude_runner.clear_session(INTROSPECTION_KEY)
 
-        # Individual coaching: deep cycles only.
+        # Coach posture, per conversation: deep cycles only.
         if depth == "deep":
-            await self._individual_coaching()
+            await self._coach_pass()
 
-    async def _individual_coaching(self):
+    async def _coach_pass(self):
+        """Apply the `coach` posture to each recently-active *user* conversation.
+
+        The coaching is generated WITH that conversation's own local context
+        (objectives / state / gap / refusals), so an intervention only lands when
+        it clears the value≫cost bar — otherwise the prompt returns RAS and nothing
+        is posted. Result is delivered INTO that conversation (cloisonnement).
+        System tracks are skipped."""
         cutoff = datetime.now(timezone.utc) - timedelta(hours=COACHING_ACTIVE_HOURS)
         for conv in self.registry.list():
-            target = self._dm_target(conv.key)
-            if not target or not conv.last_activity:
+            # Only real user conversations — never monitor:* / introspection.
+            if not keys.is_user(conv.key) or not conv.last_activity:
                 continue
             try:
                 last = datetime.fromisoformat(conv.last_activity)
@@ -182,18 +195,9 @@ class Introspector:
             if last < cutoff:
                 continue
             resp = await self.claude_runner.send_message(
-                conv.key, prompts.USER_COACHING, with_context=True
+                conv.key, prompts.COACH, with_context=True
             )
             if resp and not is_clear(resp) and not _is_error(resp):
-                await self.notifier.notify_user(target, resp)
-                logger.info("Introspection: individual coaching DM → %s", conv.key)
-
-    @staticmethod
-    def _dm_target(key: str):
-        """Return a (kind, ident) DM target for a key, or None if not DM-able."""
-        p = keys.parse(key)
-        if p.channel == "discord" and p.kind == "dm":
-            return ("discord", p.ident)
-        if p.channel == "synology":
-            return ("synology", p.ident)
-        return None
+                await self.notifier.notify_conversation(conv.key, f"🧭 {resp}")
+                logger.info("Coach: intervention → %s", conv.key)
+                logger.info("Introspection: tailored coaching → %s", conv.key)
