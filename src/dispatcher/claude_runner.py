@@ -41,10 +41,12 @@ class ClaudeRunner:
     """Runs Claude Code CLI commands and manages conversation sessions.
 
     Conversation state lives in a durable `ConversationRegistry` (the mapping
-    key → ConversationRecord). User conversations resume via a deterministic
-    `--session-id` (uuid5 of the key), so continuity is self-healing and survives
-    restarts; system tracks (monitor:*, introspection) stay ephemeral. Callers
-    address conversations by their structured key (see `conversations.keys`).
+    key → ConversationRecord). A user conversation establishes a Claude session on
+    its first turn and **resumes it with `--resume`** on every later turn (the
+    captured session id + `session_started` flag survive restarts); a lost
+    transcript self-heals by re-establishing. System tracks (monitor:*,
+    introspection) stay ephemeral. Callers address conversations by their
+    structured key (see `conversations.keys`).
     """
 
     def __init__(self, registry: ConversationRegistry | None = None):
@@ -136,15 +138,18 @@ class ClaudeRunner:
             allowed = get_allowed_tools_string(active_services)
             cmd.extend(["--allowedTools", allowed])
 
-        # Continuity. Persistent *user* conversations get a deterministic,
-        # self-healing session id (uuid5 of the key) via --session-id: it resumes
-        # if the transcript exists, else creates it — no stale --resume failures.
-        # System tracks (monitor:*, introspection) stay ephemeral: a fresh session
-        # each call (no flag), preserving the "no context buildup" behaviour.
-        continuity = (["--session-id", conv.session_id]
-                      if keys.is_user(conversation_key) else [])
+        # Continuity (persistent *user* conversations only). The first turn
+        # ESTABLISHES a session (no flag → Claude mints the id, captured below);
+        # every later turn RESUMES it with --resume <id> — resuming is what actually
+        # preserves the conversation context. System tracks (monitor:*,
+        # introspection) stay ephemeral: a fresh session each call (no flag).
+        is_user = keys.is_user(conversation_key)
+        continuity = (["--resume", conv.session_id]
+                      if is_user and conv.session_started else [])
 
-        logger.info("Running: %s (cwd=%s)", " ".join(cmd[:6]) + " ...", JARVIS_PROJECT_DIR)
+        logger.info("Running: %s%s (cwd=%s)", " ".join(cmd[:6]) + " ...",
+                    f" [{continuity[0]}]" if continuity else " [new session]",
+                    JARVIS_PROJECT_DIR)
 
         env = os.environ.copy()
 
@@ -153,17 +158,31 @@ class ClaudeRunner:
         try:
             rc, output, stderr_text = await self._spawn(cmd + continuity, env)
 
-            # Defensive fallback: should a Claude Code version reject reusing an
-            # existing --session-id ("already in use") rather than resuming it,
-            # retry once with --resume on the same deterministic id.
-            if rc != 0 and not output and continuity and "in use" in stderr_text.lower():
-                logger.warning("session-id reuse rejected, retrying with --resume")
-                rc, output, stderr_text = await self._spawn(
-                    cmd + ["--resume", conv.session_id], env)
+            # Self-heal: if --resume targets a session whose transcript is gone
+            # (e.g. after a pod recreate / crash), re-establish a fresh session
+            # instead of failing the turn.
+            if (continuity and rc != 0 and not output
+                    and "no conversation found" in stderr_text.lower()):
+                logger.warning("resume failed (session lost) for %s, re-establishing",
+                               conversation_key)
+                async with self._lock:
+                    self.registry.reset_session(conversation_key)
+                rc, output, stderr_text = await self._spawn(cmd, env)
 
             if rc != 0 and not output:
                 logger.error("Claude Code error (rc=%d): %s", rc, stderr_text)
                 return f"Erreur Claude Code: {stderr_text or 'processus terminé sans réponse'}"
+
+            # Persist continuity: mark the session established and store the actual
+            # id Claude reports, so the next turn resumes the right session.
+            if is_user:
+                actual = None
+                try:
+                    actual = json.loads(output).get("session_id")
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    pass
+                async with self._lock:
+                    self.registry.record_session(conversation_key, actual)
 
             return self._parse_claude_output(output, stderr_text)
 

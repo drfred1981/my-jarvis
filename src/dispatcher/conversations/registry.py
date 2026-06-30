@@ -35,14 +35,20 @@ class ConversationRecord:
     ``discord:thread:123``). Holds the durable bits and resolves the derived
     ones, so callers look up everything they need from a single record:
 
-      - `session_id`  : Claude session id — deterministic (`keys.session_id`,
-                        a pure function of the key) so it's reproducible and
-                        self-healing; stored too, to stay observable/overridable.
+      - `session_id`  : Claude session id used for continuity. Initialised to a
+                        deterministic value (`keys.session_id`, a pure function of
+                        the key) to establish the first turn; then overwritten with
+                        the *actual* id Claude reports, so `--resume` always targets
+                        a real session.
+      - `session_started` : True once a Claude session has been established for this
+                        conversation → subsequent turns use `--resume` (not
+                        `--session-id`), which is what actually preserves context.
       - `description` : minimal context seeded from `DISCORD_CHANNEL_IDS`.
       - transport / local-context name : pure functions of `key` (see `keys`).
     """
     key: str
     session_id: str = ""                  # derived from key if empty (see ensure_session_id)
+    session_started: bool = False         # True once a Claude session exists → use --resume
     description: str = ""                 # seeded from config, enriched at runtime via memory
     channel: str = ""
     mode: str = "direct"                  # direct | multiuser
@@ -147,6 +153,34 @@ class ConversationRegistry:
                 return
             conv.last_activity = (when or _now()).isoformat()
             self._save_locked()
+
+    def record_session(self, key: str, session_id: str | None = None) -> None:
+        """Mark a conversation's Claude session as established, and (optionally)
+        store the *actual* session id Claude reported, so later turns can
+        `--resume` it. No-op if the conversation is unknown."""
+        with self._lock:
+            conv = self._items.get(key)
+            if conv is None:
+                return
+            changed = False
+            if session_id and session_id != conv.session_id:
+                conv.session_id = session_id
+                changed = True
+            if not conv.session_started:
+                conv.session_started = True
+                changed = True
+            if changed:
+                self._save_locked()
+
+    def reset_session(self, key: str) -> None:
+        """Forget a conversation's Claude session (transcript lost): next turn
+        re-establishes a fresh one. Keeps the conversation entry."""
+        with self._lock:
+            conv = self._items.get(key)
+            if conv is not None and conv.session_started:
+                conv.session_started = False
+                conv.session_id = keys.session_id(key)  # back to a clean deterministic id
+                self._save_locked()
 
     def set_description(self, key: str, description: str) -> None:
         """Seed/refresh the config-provided minimal context (no-op if unchanged).
