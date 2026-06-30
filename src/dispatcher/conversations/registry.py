@@ -1,8 +1,8 @@
 """Durable, file-backed registry of conversations.
 
-Maps a conversation key (see `keys`) to its Claude Code session id and activity
-metadata, persisted as JSON. This replaces the in-memory session dict so that
-`--resume` continuity and idle/activity tracking survive process restarts.
+Maps a conversation key (see `keys`) to a `ConversationRecord` (deterministic
+Claude session id, config description, activity metadata), persisted as JSON, so
+session continuity and idle/activity tracking survive process restarts.
 
 The registry is intentionally free of metrics / framework coupling: it is a
 plain data store. Callers (e.g. `ClaudeRunner`) own observability.
@@ -28,23 +28,45 @@ def _now() -> datetime:
 
 
 @dataclass
-class Conversation:
-    """One conversational context and its durable state."""
+class ConversationRecord:
+    """The mapping from one global conversation id to all its technical data.
+
+    Indexed by `key` (the stable, transport-coupled global id, e.g.
+    ``discord:thread:123``). Holds the durable bits and resolves the derived
+    ones, so callers look up everything they need from a single record:
+
+      - `session_id`  : Claude session id — deterministic (`keys.session_id`,
+                        a pure function of the key) so it's reproducible and
+                        self-healing; stored too, to stay observable/overridable.
+      - `description` : minimal context seeded from `DISCORD_CHANNEL_IDS`.
+      - transport / local-context name : pure functions of `key` (see `keys`).
+    """
     key: str
-    claude_session_id: str | None = None
+    session_id: str = ""                  # derived from key if empty (see ensure_session_id)
+    description: str = ""                 # seeded from config, enriched at runtime via memory
     channel: str = ""
-    mode: str = "direct"                 # direct | multiuser
+    mode: str = "direct"                  # direct | multiuser
     participants: list[str] = field(default_factory=list)
     created_at: str = ""
     last_activity: str = ""
+
+    def ensure_session_id(self) -> "ConversationRecord":
+        """Populate the deterministic session id if missing (load/migration)."""
+        if not self.session_id:
+            self.session_id = keys.session_id(self.key)
+        return self
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Conversation":
+    def from_dict(cls, d: dict) -> "ConversationRecord":
         fields = set(cls.__dataclass_fields__)
-        return cls(**{k: v for k, v in d.items() if k in fields})
+        return cls(**{k: v for k, v in d.items() if k in fields}).ensure_session_id()
+
+
+# Backwards-compatible alias (older imports referenced `Conversation`).
+Conversation = ConversationRecord
 
 
 class ConversationRegistry:
@@ -97,13 +119,16 @@ class ConversationRegistry:
             return self._items.get(key)
 
     def get_or_create(self, key: str, *, channel: str | None = None,
-                      mode: str = "direct", participants=None) -> Conversation:
+                      mode: str = "direct", participants=None,
+                      description: str = "") -> ConversationRecord:
         with self._lock:
             conv = self._items.get(key)
             if conv is None:
                 now = _now().isoformat()
-                conv = Conversation(
+                conv = ConversationRecord(
                     key=key,
+                    session_id=keys.session_id(key),
+                    description=description,
                     channel=channel or keys.parse(key).channel,
                     mode=mode,
                     participants=list(participants or []),
@@ -123,13 +148,26 @@ class ConversationRegistry:
             conv.last_activity = (when or _now()).isoformat()
             self._save_locked()
 
-    def record_session_id(self, key: str, claude_session_id: str) -> None:
+    def set_description(self, key: str, description: str) -> None:
+        """Seed/refresh the config-provided minimal context (no-op if unchanged).
+
+        Creates the record if it does not exist yet (startup seeding from
+        `DISCORD_CHANNEL_IDS`). Runtime-learned context lives separately in the
+        memory store, so refreshing this field never clobbers it.
+        """
         with self._lock:
             conv = self._items.get(key)
-            if conv is None or conv.claude_session_id == claude_session_id:
-                return
-            conv.claude_session_id = claude_session_id
-            self._save_locked()
+            if conv is None:
+                now = _now().isoformat()
+                conv = ConversationRecord(
+                    key=key, session_id=keys.session_id(key), description=description,
+                    channel=keys.parse(key).channel, created_at=now, last_activity=now,
+                )
+                self._items[key] = conv
+                self._save_locked()
+            elif conv.description != description:
+                conv.description = description
+                self._save_locked()
 
     def set_mode(self, key: str, mode: str) -> None:
         """Update a conversation's mode ('direct' | 'multiuser') if it changed."""
@@ -137,14 +175,6 @@ class ConversationRegistry:
             conv = self._items.get(key)
             if conv and conv.mode != mode:
                 conv.mode = mode
-                self._save_locked()
-
-    def reset_session(self, key: str) -> None:
-        """Forget the Claude session id but keep the conversation entry."""
-        with self._lock:
-            conv = self._items.get(key)
-            if conv and conv.claude_session_id is not None:
-                conv.claude_session_id = None
                 self._save_locked()
 
     def clear(self, key: str) -> bool:
