@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from claude_runner import ClaudeRunner
 from channels.discord_bot import DiscordBot
 from channels.web_socket import ConnectionManager
-from conversations import keys
+from conversations import channel_config, keys
 from metrics import (
     MESSAGES_TOTAL,
     MESSAGE_DURATION_SECONDS,
@@ -215,6 +215,26 @@ async def synology_webhook(payload: dict):
 
 # --- Git repo pre-clone (runs in dispatcher, not in MCP server) ---
 
+def _seed_discord_channels():
+    """Seed the conversation mapping from `DISCORD_CHANNEL_IDS` at startup.
+
+    For each configured channel, create/refresh its `ConversationRecord` and its
+    config-provided `description` (the minimal context injected as cadrage). This
+    is declarative and re-applied every boot; runtime-learned context lives in the
+    memory store and is never clobbered. No-op when nothing is configured.
+    """
+    channels = channel_config.parse_channels(os.getenv("DISCORD_CHANNEL_IDS", ""))
+    seeded = 0
+    for cfg in channels:
+        if not cfg.description:
+            continue  # id-only entries need no mapping seed (inferred at runtime)
+        key = keys.discord_channel(cfg.id)
+        claude.registry.set_description(key, cfg.description)
+        seeded += 1
+    if seeded:
+        logger.info("Discord channels: seeded %d conversation descriptions", seeded)
+
+
 def _preclone_git_repos():
     """Pre-clone git repos at dispatcher startup.
 
@@ -309,6 +329,12 @@ async def startup():
     log_service_status()
     for name, available in get_available_services().items():
         SERVICES_AVAILABLE.labels(service=name).set(1 if available else 0)
+
+    # Seed the conversation mapping from DISCORD_CHANNEL_IDS (declarative cadrage)
+    try:
+        _seed_discord_channels()
+    except Exception as e:
+        logger.warning("Discord channel seeding failed: %s", e)
 
     # Pre-clone git repos in background thread (non-blocking)
     threading.Thread(target=_preclone_git_repos, daemon=True, name="git-preclone").start()

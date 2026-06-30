@@ -21,6 +21,8 @@ import logging
 import os
 from pathlib import Path
 
+from conversations import keys
+
 logger = logging.getLogger(__name__)
 
 SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_DIR", "/home/jarvis/skills"))
@@ -33,7 +35,7 @@ MAX_ATTACHED_TOTAL = 6000
 
 
 def _safe_key(key: str) -> str:
-    return key.replace(":", "-")
+    return keys.slug(key)
 
 
 def _parse_frontmatter(text: str) -> dict:

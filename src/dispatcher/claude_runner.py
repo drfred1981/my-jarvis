@@ -40,10 +40,11 @@ TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "3600"))
 class ClaudeRunner:
     """Runs Claude Code CLI commands and manages conversation sessions.
 
-    Conversation state (the mapping key → Claude session id + activity) lives in
-    a durable `ConversationRegistry`, so `--resume` continuity and idle tracking
-    survive restarts. Callers address conversations by their structured key
-    (see `conversations.keys`).
+    Conversation state lives in a durable `ConversationRegistry` (the mapping
+    key → ConversationRecord). User conversations resume via a deterministic
+    `--session-id` (uuid5 of the key), so continuity is self-healing and survives
+    restarts; system tracks (monitor:*, introspection) stay ephemeral. Callers
+    address conversations by their structured key (see `conversations.keys`).
     """
 
     def __init__(self, registry: ConversationRegistry | None = None):
@@ -108,8 +109,10 @@ class ClaudeRunner:
                 except Exception as e:
                     logger.warning("activity listener error: %s", e)
 
-        # Prepend distilled local + global context (bounded, no-op if absent)
-        prompt = injector.inject(conversation_key, message) if with_context else message
+        # Prepend distilled local + global context (bounded, no-op if absent),
+        # plus the config-seeded minimal framing carried on the record.
+        prompt = (injector.inject(conversation_key, message, framing=conv.description)
+                  if with_context else message)
 
         # Detect active services
         active_services = get_active_services()
@@ -133,9 +136,13 @@ class ClaudeRunner:
             allowed = get_allowed_tools_string(active_services)
             cmd.extend(["--allowedTools", allowed])
 
-        # Resume existing conversation
-        if conv.claude_session_id:
-            cmd.extend(["--resume", conv.claude_session_id])
+        # Continuity. Persistent *user* conversations get a deterministic,
+        # self-healing session id (uuid5 of the key) via --session-id: it resumes
+        # if the transcript exists, else creates it — no stale --resume failures.
+        # System tracks (monitor:*, introspection) stay ephemeral: a fresh session
+        # each call (no flag), preserving the "no context buildup" behaviour.
+        continuity = (["--session-id", conv.session_id]
+                      if keys.is_user(conversation_key) else [])
 
         logger.info("Running: %s (cwd=%s)", " ".join(cmd[:6]) + " ...", JARVIS_PROJECT_DIR)
 
@@ -144,40 +151,21 @@ class ClaudeRunner:
         hb_task = (asyncio.create_task(self._heartbeat_loop(heartbeat, heartbeat_interval))
                    if heartbeat else None)
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=JARVIS_PROJECT_DIR,
-                env=env,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=TIMEOUT
-            )
+            rc, output, stderr_text = await self._spawn(cmd + continuity, env)
 
-            stderr_text = stderr.decode().strip()
-            if stderr_text:
-                logger.info("Claude Code stderr: %s", stderr_text[:500])
+            # Defensive fallback: should a Claude Code version reject reusing an
+            # existing --session-id ("already in use") rather than resuming it,
+            # retry once with --resume on the same deterministic id.
+            if rc != 0 and not output and continuity and "in use" in stderr_text.lower():
+                logger.warning("session-id reuse rejected, retrying with --resume")
+                rc, output, stderr_text = await self._spawn(
+                    cmd + ["--resume", conv.session_id], env)
 
-            output = stdout.decode().strip()
-
-            if proc.returncode != 0 and not output:
-                logger.error("Claude Code error (rc=%d): %s", proc.returncode, stderr_text)
+            if rc != 0 and not output:
+                logger.error("Claude Code error (rc=%d): %s", rc, stderr_text)
                 return f"Erreur Claude Code: {stderr_text or 'processus terminé sans réponse'}"
 
-            response_text = self._parse_claude_output(output, stderr_text)
-
-            # Capture session ID for conversation continuity (persisted)
-            try:
-                result = json.loads(output)
-                claude_sid = result.get("session_id")
-                if claude_sid:
-                    async with self._lock:
-                        self.registry.record_session_id(conversation_key, claude_sid)
-            except (json.JSONDecodeError, AttributeError):
-                pass
-
-            return response_text
+            return self._parse_claude_output(output, stderr_text)
 
         except asyncio.TimeoutError:
             logger.error("Claude Code timeout for %s", conversation_key)
@@ -188,6 +176,26 @@ class ClaudeRunner:
         finally:
             if hb_task:
                 hb_task.cancel()
+
+    async def _spawn(self, cmd: list[str], env: dict) -> tuple[int | None, str, str]:
+        """Run one `claude` invocation. Returns (returncode, stdout, stderr).
+
+        `stdin` is redirected to /dev/null so the CLI never blocks ~3s waiting on
+        a stdin pipe it will not receive (the prompt is passed via `-p`).
+        """
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=JARVIS_PROJECT_DIR,
+            env=env,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=TIMEOUT)
+        stderr_text = stderr.decode().strip()
+        if stderr_text:
+            logger.info("Claude Code stderr: %s", stderr_text[:500])
+        return proc.returncode, stdout.decode().strip(), stderr_text
 
     @staticmethod
     async def _heartbeat_loop(callback, interval: float):

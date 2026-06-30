@@ -37,14 +37,13 @@ MAX_LOCAL_CHARS = 4000
 
 
 def local_context_name(key: str) -> str:
-    """Memory context name holding a conversation's distilled local context.
+    """Memory context name for a conversation's distilled local context.
 
-    Conversation keys use ':' separators; memory context names are path-like and
-    slug-safe, so ':' is mapped to '-' (e.g. ``discord:dm:1`` →
-    ``conversations/discord-dm-1``). Phase 3 doctrine instructs the agent to save
-    under this exact name so reads and writes line up.
+    Canonical resolver lives in `keys.context_name` (e.g. ``discord:dm:1`` →
+    ``conversations/discord-dm-1``); kept here as a thin alias for callers that
+    import it from this module.
     """
-    return "conversations/" + key.replace(keys.SEP, "-")
+    return keys.context_name(key)
 
 
 def _context_path(name: str) -> str:
@@ -78,14 +77,19 @@ def _read_capped(name: str, max_chars: int) -> str:
     return text
 
 
-def build_block(key: str) -> str:
+def build_block(key: str, framing: str = "") -> str:
     """Assemble the injected context block for a key ("" when nothing to inject).
 
+    - `framing`: the config-seeded minimal context (record `description`), shown
+      first as the conversation's stable cadrage.
     - Global context + global skill catalog: any user / introspection conversation.
     - Local context + attached skills: real user conversations only.
     """
     sections = []
     wants_skills = keys.is_user(key) or key == keys.INTROSPECTION
+
+    if framing and keys.is_user(key):
+        sections.append("## Cadrage de cette conversation (config)\n" + framing.strip())
 
     global_ctx = _read_capped(GLOBAL_CONTEXT_NAME, MAX_GLOBAL_CHARS)
     if global_ctx:
@@ -116,7 +120,7 @@ def build_block(key: str) -> str:
     return "<!-- contexte injecté automatiquement -->\n" + header + "\n\n".join(sections)
 
 
-def inject(key: str, message: str) -> str:
+def inject(key: str, message: str, framing: str = "") -> str:
     """Prepend the context block to a message (unchanged when no context)."""
-    block = build_block(key)
+    block = build_block(key, framing=framing)
     return f"{block}\n\n---\n\n{message}" if block else message

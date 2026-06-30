@@ -17,6 +17,7 @@ user-activity aggregation (see `registry.last_user_activity`).
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 SEP = ":"
@@ -26,6 +27,12 @@ USER_CHANNELS = frozenset({"discord", "web", "synology"})
 
 # Singleton key for the autonomous introspection track (Track B).
 INTROSPECTION = "introspection"
+
+# Fixed namespace for deriving deterministic Claude session ids from a key.
+# Stable across deploys/pods → uuid5(NS, key) reconstructs the same session id
+# without any stored state, so a lost session transcript self-heals (see
+# `keys.session_id`). Do NOT change this value: it would orphan every session.
+_SESSION_NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 
 
 # --- builders ---
@@ -81,3 +88,30 @@ def parse(key: str) -> ParsedKey:
 def is_user(key: str) -> bool:
     """True if this key is a real user conversation (not a system track)."""
     return parse(key).is_user
+
+
+# --- derived technical handles (pure functions of the global id) ---
+
+def slug(key: str) -> str:
+    """Slug-safe form of a key (':' → '-'), used for file/context names."""
+    return key.replace(SEP, "-")
+
+
+def context_name(key: str) -> str:
+    """Memory context name holding a conversation's distilled local context.
+
+    Canonical resolver: both the context injector and the skills reader agree on
+    this (e.g. ``discord:dm:1`` → ``conversations/discord-dm-1``).
+    """
+    return "conversations/" + slug(key)
+
+
+def session_id(key: str) -> str:
+    """Deterministic Claude session id (uuid5) for a conversation key.
+
+    A pure function of the global conversation id → reproducible without any
+    stored state. Combined with ``claude --session-id`` (idempotent: resumes if
+    the transcript exists, else creates it), this removes the stale-``--resume``
+    failure mode entirely.
+    """
+    return str(uuid.uuid5(_SESSION_NS, key))
