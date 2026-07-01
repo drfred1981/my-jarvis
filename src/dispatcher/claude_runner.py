@@ -152,6 +152,8 @@ class ClaudeRunner:
                     JARVIS_PROJECT_DIR)
 
         env = os.environ.copy()
+        # Force HOME to /home/jarvis so Claude Code writes .claude there, not /.claude
+        env["HOME"] = JARVIS_PROJECT_DIR
 
         hb_task = (asyncio.create_task(self._heartbeat_loop(heartbeat, heartbeat_interval))
                    if heartbeat else None)
