@@ -107,6 +107,11 @@ def build_block(key: str, framing: str = "") -> str:
         attached = skills.attached_block(key)
         if attached:
             sections.append(attached)
+        sections.append(
+            f"> Si tu apprends un fait durable (objectif, décision, état, "
+            f"refus/préférence) au fil de cet échange, persiste-le via "
+            f"`memory:save_context` dans `{local_context_name(key)}`."
+        )
 
     if not sections:
         return ""
