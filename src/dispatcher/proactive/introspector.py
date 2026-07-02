@@ -29,6 +29,7 @@ import os
 from datetime import datetime, timezone, timedelta
 
 from conversations import keys
+from context.injector import MEMORY_DIR, local_context_name
 
 from . import prompts, quiet
 
@@ -50,6 +51,9 @@ LIGHT_MAX_MIN = _env_int("JARVIS_INTROSPECT_LIGHT_MAX_MIN", 20)
 MEDIUM_MAX_MIN = _env_int("JARVIS_INTROSPECT_MEDIUM_MAX_MIN", 80)
 # Individual coaching only targets users active within this many hours.
 COACHING_ACTIVE_HOURS = _env_int("JARVIS_COACHING_ACTIVE_HOURS", 24)
+# Gap (hours) between a conversation's last_activity and its context file mtime
+# that triggers a stale-context nudge during the deep coach pass.
+STALE_CONTEXT_HOURS = _env_int("JARVIS_STALE_CONTEXT_HOURS", 4)
 
 
 def depth_for(idle_min: float) -> str:
@@ -175,6 +179,35 @@ class Introspector:
         if depth == "deep":
             await self._coach_pass()
 
+    @staticmethod
+    def _stale_context_instruction(key: str, last_activity: datetime) -> str:
+        """Return a nudge to update a stale memory file, or '' if it is fresh.
+
+        Only fires for conversations whose last_activity is within the coaching
+        window — stale contexts for very old conversations are not worth updating.
+        """
+        now = datetime.now(timezone.utc)
+        if (now - last_activity).total_seconds() / 3600 > COACHING_ACTIVE_HOURS:
+            return ""
+        ctx_name = local_context_name(key)
+        parts = [seg for seg in ctx_name.strip("/").split("/") if seg]
+        path = os.path.join(MEMORY_DIR, *parts) + ".md"
+        if not os.path.isfile(path):
+            return (
+                f"⚠️ La mémoire locale `{ctx_name}` n'existe pas encore. "
+                f"Crée-la via `memory:save_context` (objectifs, état, historique, "
+                f"refus/préférences) avant de décider s'il y a une intervention coach.\n\n"
+            )
+        mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
+        gap_h = (last_activity - mtime).total_seconds() / 3600
+        if gap_h > STALE_CONTEXT_HOURS:
+            return (
+                f"⚠️ La mémoire locale `{ctx_name}` accuse ~{gap_h:.0f}h de retard "
+                f"sur les derniers échanges. Mets-la à jour via `memory:save_context` "
+                f"avant l'évaluation coach.\n\n"
+            )
+        return ""
+
     async def _coach_pass(self):
         """Apply the `coach` posture to each recently-active *user* conversation.
 
@@ -182,7 +215,12 @@ class Introspector:
         (objectives / state / gap / refusals), so an intervention only lands when
         it clears the value≫cost bar — otherwise the prompt returns RAS and nothing
         is posted. Result is delivered INTO that conversation (cloisonnement).
-        System tracks are skipped."""
+        System tracks are skipped.
+
+        When the conversation's memory file lags its last_activity by more than
+        STALE_CONTEXT_HOURS, a stale-context nudge is prepended to the coach prompt
+        so Claude updates it before (or instead of) proposing an intervention.
+        """
         cutoff = datetime.now(timezone.utc) - timedelta(hours=COACHING_ACTIVE_HOURS)
         for conv in self.registry.list():
             # Only real user conversations — never monitor:* / introspection.
@@ -194,8 +232,10 @@ class Introspector:
                 continue
             if last < cutoff:
                 continue
+            stale = self._stale_context_instruction(conv.key, last)
+            prompt = stale + prompts.COACH if stale else prompts.COACH
             resp = await self.claude_runner.send_message(
-                conv.key, prompts.COACH, with_context=True
+                conv.key, prompt, with_context=True
             )
             if resp and not is_clear(resp) and not _is_error(resp):
                 await self.notifier.notify_conversation(conv.key, f"🧭 {resp}")
