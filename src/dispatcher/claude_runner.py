@@ -7,7 +7,13 @@ import os
 
 from context import injector
 from conversations import ConversationRegistry, keys
-from metrics import ACTIVE_SESSIONS
+from metrics import (
+    ACTIVE_SESSIONS,
+    TOKENS_TOTAL,
+    COST_USD_TOTAL,
+    TURNS_TOTAL,
+    SESSION_ERRORS_TOTAL,
+)
 from services import get_active_services, get_active_mcp_config, get_allowed_tools_string
 
 logger = logging.getLogger(__name__)
@@ -35,6 +41,31 @@ MAX_TURNS = os.environ.get("JARVIS_MAX_TURNS", "25")
 # Default 3600s (1h) to accommodate the daily-digest and complex incident
 # investigations. Override via the JARVIS_TIMEOUT env var if needed.
 TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "3600"))
+
+
+def _track_claude_usage(result: dict, conv_type: str) -> None:
+    """Increment Prometheus metrics from a parsed Claude Code JSON result dict."""
+    cost = result.get("total_cost_usd") or 0
+    if cost:
+        COST_USD_TOTAL.inc(float(cost))
+
+    turns = result.get("num_turns") or 0
+    if turns:
+        TURNS_TOTAL.labels(conversation_type=conv_type).inc(int(turns))
+
+    usage = result.get("usage") or {}
+    for token_type, field in (
+        ("input", "input_tokens"),
+        ("output", "output_tokens"),
+        ("cache_read", "cache_read_input_tokens"),
+        ("cache_creation", "cache_creation_input_tokens"),
+    ):
+        count = usage.get(field) or 0
+        if count:
+            TOKENS_TOTAL.labels(type=token_type).inc(int(count))
+
+    if result.get("subtype") == "error_max_turns":
+        SESSION_ERRORS_TOTAL.labels(error_type="max_turns").inc()
 
 
 class ClaudeRunner:
@@ -83,18 +114,7 @@ class ClaudeRunner:
                            *, with_context: bool = True,
                            is_user_initiated: bool = False,
                            heartbeat=None, heartbeat_interval: float = 30) -> str:
-        """Send a message to Claude Code and return the response.
-
-        `conversation_key` is a structured key (see `conversations.keys`), e.g.
-        ``discord:dm:123`` or ``monitor:cluster-health``. When `with_context` is
-        set, the distilled local + global context is prepended to the message
-        (no-op until those memory contexts exist). `is_user_initiated` marks a
-        genuine inbound user message — only those update last-activity and wake
-        the introspector (agent-initiated sends, e.g. coaching, must not).
-
-        `heartbeat`, if given, is an async callback ``cb(elapsed_seconds)`` invoked
-        every `heartbeat_interval` s while the run is in flight (long-task UX).
-        """
+        """Send a message to Claude Code and return the response."""
         logger.info("Processing message for %s: %s", conversation_key, message[:100])
 
         async with self._lock:
@@ -111,12 +131,9 @@ class ClaudeRunner:
                 except Exception as e:
                     logger.warning("activity listener error: %s", e)
 
-        # Prepend distilled local + global context (bounded, no-op if absent),
-        # plus the config-seeded minimal framing carried on the record.
         prompt = (injector.inject(conversation_key, message, framing=conv.description)
                   if with_context else message)
 
-        # Detect active services
         active_services = get_active_services()
         logger.info("Active MCP services: %s", active_services or "none")
 
@@ -128,21 +145,14 @@ class ClaudeRunner:
             "--max-budget-usd", MAX_BUDGET,
         ]
 
-        # Load only active MCP servers
         mcp_path = self._get_mcp_config_path()
         if mcp_path:
             cmd.extend(["--mcp-config", mcp_path])
 
-        # Allow tools only for active services
         if active_services:
             allowed = get_allowed_tools_string(active_services)
             cmd.extend(["--allowedTools", allowed])
 
-        # Continuity (persistent *user* conversations only). The first turn
-        # ESTABLISHES a session (no flag → Claude mints the id, captured below);
-        # every later turn RESUMES it with --resume <id> — resuming is what actually
-        # preserves the conversation context. System tracks (monitor:*,
-        # introspection) stay ephemeral: a fresh session each call (no flag).
         is_user = keys.is_user(conversation_key)
         continuity = (["--resume", conv.session_id]
                       if is_user and conv.session_started else [])
@@ -152,7 +162,6 @@ class ClaudeRunner:
                     JARVIS_PROJECT_DIR)
 
         env = os.environ.copy()
-        # Force HOME to /home/jarvis so Claude Code writes .claude there, not /.claude
         env["HOME"] = JARVIS_PROJECT_DIR
 
         hb_task = (asyncio.create_task(self._heartbeat_loop(heartbeat, heartbeat_interval))
@@ -160,9 +169,6 @@ class ClaudeRunner:
         try:
             rc, output, stderr_text = await self._spawn(cmd + continuity, env)
 
-            # Self-heal: if --resume targets a session whose transcript is gone
-            # (e.g. after a pod recreate / crash), re-establish a fresh session
-            # instead of failing the turn.
             if (continuity and rc != 0 and not output
                     and "no conversation found" in stderr_text.lower()):
                 logger.warning("resume failed (session lost) for %s, re-establishing",
@@ -173,23 +179,32 @@ class ClaudeRunner:
 
             if rc != 0 and not output:
                 logger.error("Claude Code error (rc=%d): %s", rc, stderr_text)
+                SESSION_ERRORS_TOTAL.labels(error_type="cli_error").inc()
                 return f"Erreur Claude Code: {stderr_text or 'processus terminé sans réponse'}"
 
-            # Persist continuity: mark the session established and store the actual
-            # id Claude reports, so the next turn resumes the right session.
-            if is_user:
-                actual = None
+            # Parse output once: continuity + metrics + response text.
+            result_dict: dict = {}
+            if output:
                 try:
-                    actual = json.loads(output).get("session_id")
-                except (json.JSONDecodeError, AttributeError, TypeError):
+                    result_dict = json.loads(output)
+                except (json.JSONDecodeError, ValueError):
                     pass
+
+            if is_user and result_dict:
                 async with self._lock:
-                    self.registry.record_session(conversation_key, actual)
+                    self.registry.record_session(conversation_key, result_dict.get("session_id"))
+
+            if result_dict:
+                conv_type = ("user" if is_user
+                             else "monitor" if conversation_key.startswith("monitor:")
+                             else "introspection")
+                _track_claude_usage(result_dict, conv_type)
 
             return self._parse_claude_output(output, stderr_text)
 
         except asyncio.TimeoutError:
             logger.error("Claude Code timeout for %s", conversation_key)
+            SESSION_ERRORS_TOTAL.labels(error_type="timeout").inc()
             return f"Timeout: Claude Code n'a pas répondu dans les {TIMEOUT} secondes."
         except Exception as e:
             logger.error("Claude Code exception: %s", e)
@@ -199,11 +214,7 @@ class ClaudeRunner:
                 hb_task.cancel()
 
     async def _spawn(self, cmd: list[str], env: dict) -> tuple[int | None, str, str]:
-        """Run one `claude` invocation. Returns (returncode, stdout, stderr).
-
-        `stdin` is redirected to /dev/null so the CLI never blocks ~3s waiting on
-        a stdin pipe it will not receive (the prompt is passed via `-p`).
-        """
+        """Run one `claude` invocation. Returns (returncode, stdout, stderr)."""
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.DEVNULL,
@@ -242,22 +253,17 @@ class ClaudeRunner:
         try:
             result = json.loads(output)
         except json.JSONDecodeError:
-            # Not JSON, return raw output
             return output
 
-        # Extract the text response if present
         response_text = result.get("result", "")
-
         subtype = result.get("subtype", "")
         is_error = result.get("is_error", False)
 
         if response_text:
-            # Got a response, but maybe hit limits
             if subtype == "error_max_turns":
                 return response_text + "\n\n_(Réponse partielle : limite de tours atteinte)_"
             return response_text
 
-        # No result field — handle known error subtypes
         if subtype == "error_max_turns":
             cost = result.get("total_cost_usd", 0)
             turns = result.get("num_turns", 0)
@@ -273,7 +279,6 @@ class ClaudeRunner:
             error_msg = "; ".join(str(e) for e in errors) if errors else "erreur inconnue"
             return f"Erreur Claude Code: {error_msg}"
 
-        # Fallback — don't dump raw JSON to users
         logger.warning("Unexpected Claude output format: %s", output[:200])
         return "Désolé, je n'ai pas pu traiter cette demande. Réessaie."
 

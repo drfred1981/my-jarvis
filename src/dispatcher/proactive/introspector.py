@@ -30,6 +30,11 @@ from datetime import datetime, timezone, timedelta
 
 from conversations import keys
 from context.injector import MEMORY_DIR, local_context_name
+from metrics import (
+    INTROSPECTION_CYCLES_TOTAL,
+    COACH_INTERVENTIONS_TOTAL,
+    STALE_CONTEXTS_DETECTED_TOTAL,
+)
 
 from . import prompts, quiet
 
@@ -162,6 +167,7 @@ class Introspector:
     async def _run_cycle(self, depth: str, idle_min: float):
         logger.info("Introspection cycle: depth=%s (idle=%.0fmin, next=%dmin)",
                     depth, idle_min, min(self._interval_min * 2, CAP_MIN))
+        INTROSPECTION_CYCLES_TOTAL.labels(depth=depth).inc()
 
         # Perimeter introspection on the dedicated introspection session. Its job
         # is to maintain `global/state`; what it surfaces is an OPERATOR digest, not
@@ -193,6 +199,7 @@ class Introspector:
         parts = [seg for seg in ctx_name.strip("/").split("/") if seg]
         path = os.path.join(MEMORY_DIR, *parts) + ".md"
         if not os.path.isfile(path):
+            STALE_CONTEXTS_DETECTED_TOTAL.labels(reason="missing").inc()
             return (
                 f"⚠️ La mémoire locale `{ctx_name}` n'existe pas encore. "
                 f"Crée-la via `memory:save_context` (objectifs, état, historique, "
@@ -201,6 +208,7 @@ class Introspector:
         mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
         gap_h = (last_activity - mtime).total_seconds() / 3600
         if gap_h > STALE_CONTEXT_HOURS:
+            STALE_CONTEXTS_DETECTED_TOTAL.labels(reason="outdated").inc()
             return (
                 f"⚠️ La mémoire locale `{ctx_name}` accuse ~{gap_h:.0f}h de retard "
                 f"sur les derniers échanges. Mets-la à jour via `memory:save_context` "
@@ -239,5 +247,6 @@ class Introspector:
             )
             if resp and not is_clear(resp) and not _is_error(resp):
                 await self.notifier.notify_conversation(conv.key, f"🧭 {resp}")
+                COACH_INTERVENTIONS_TOTAL.inc()
                 logger.info("Coach: intervention → %s", conv.key)
                 logger.info("Introspection: tailored coaching → %s", conv.key)
