@@ -32,6 +32,9 @@ from metrics import (
     MONITOR_ALERTS_ACKNOWLEDGED_TOTAL,
     SERVICES_AVAILABLE,
     WEBSOCKET_CONNECTIONS,
+    MEMORY_FILES_COUNT,
+    MEMORY_TOTAL_BYTES,
+    CONTEXT_FILE_SIZE_BYTES,
 )
 from notifier import Notifier
 from proactive.introspector import Introspector
@@ -235,6 +238,49 @@ def _seed_discord_channels():
         logger.info("Discord channels: seeded %d conversation descriptions", seeded)
 
 
+
+_MEMORY_DIR = os.getenv("JARVIS_MEMORY_DIR", "/home/jarvis/memory")
+
+
+def _update_memory_gauges() -> None:
+    """Scan the memory NFS dir and update size/count gauges."""
+    total_bytes = 0
+    count = 0
+    conv_sizes: list[int] = []
+    for root, _dirs, files in os.walk(_MEMORY_DIR):
+        for fname in files:
+            if not fname.endswith(".md"):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                size = os.path.getsize(fpath)
+            except OSError:
+                continue
+            total_bytes += size
+            count += 1
+            rel = os.path.relpath(fpath, _MEMORY_DIR)
+            if rel == os.path.join("global", "state.md"):
+                CONTEXT_FILE_SIZE_BYTES.labels(context_name="global_state").set(size)
+            elif rel.startswith("conversations" + os.sep):
+                conv_sizes.append(size)
+    MEMORY_FILES_COUNT.set(count)
+    MEMORY_TOTAL_BYTES.set(total_bytes)
+    if conv_sizes:
+        CONTEXT_FILE_SIZE_BYTES.labels(context_name="conversations_avg").set(
+            sum(conv_sizes) / len(conv_sizes)
+        )
+
+
+async def _memory_gauge_loop() -> None:
+    """Update memory gauges every 5 minutes in the background."""
+    while True:
+        try:
+            _update_memory_gauges()
+        except Exception as e:
+            logger.debug("memory gauge update error: %s", e)
+        await asyncio.sleep(300)
+
+
 def _preclone_git_repos():
     """Pre-clone git repos at dispatcher startup.
 
@@ -374,6 +420,13 @@ async def startup():
         await introspector.start()
     except Exception as e:
         logger.warning("Introspection failed to start: %s", e)
+
+    # Seed memory gauges immediately, then refresh every 5 min.
+    try:
+        _update_memory_gauges()
+    except Exception as e:
+        logger.debug("initial memory gauge update failed: %s", e)
+    asyncio.create_task(_memory_gauge_loop())
 
     logger.info("Jarvis dispatcher ready")
 
