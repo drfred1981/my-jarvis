@@ -147,9 +147,17 @@ DEFAULT_CHECKS = [
             "type 'tu veux que je creuse l'un de ces points ?'. "
             "Sauvegarde ton récap dans `memory:save_context('digest/last', <ton récap>)` "
             "et dans `memory:save_context('digest/" + datetime.now().strftime("%Y-%m-%d") + "', <ton récap>)` "
-            "à la fin (utilise la date du jour réelle au moment où tu écris, pas celle-ci)."
+            "à la fin (utilise la date du jour réelle au moment où tu écris, pas celle-ci).\n\n"
+            "Archive aussi ce récap dans Docmost :\n"
+            "1. `docmost:list_spaces` → note l'ID de l'espace 'General'.\n"
+            "2. `docmost:list_pages(space_id)` → cherche une page racine 'Journal de bord' ;\n"
+            "   si absente, crée-la : `docmost:create_page(space_id=..., "
+            "title='Journal de bord', content='Journal des digests quotidiens Jarvis.')`.\n"
+            "3. Crée la page du jour : `docmost:create_page(space_id=..., "
+            "parent_page_id=<id Journal de bord>, "
+            "title='Digest <date du jour YYYY-MM-DD>', content=<récap en markdown>)`."
         ),
-        required_services=["memory", "git"],
+        required_services=["memory", "git", "docmost"],
     ),
 ]
 
