@@ -5,6 +5,12 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
 ## [Non publié]
 
 ### Fixed
+- **Pod bloqué au démarrage par l'auth OAuth des MCP distants claude.ai.** `claude` était
+  lancé avec `--mcp-config` mais **sans `--strict-mcp-config`** → il chargeait aussi les
+  connecteurs de compte claude.ai (Gmail/Calendar/Drive), dont l'init OAuth **interactif**
+  bloque indéfiniment en pod headless → le CLI ne rendait jamais la main, le dispatcher ne
+  démarrait pas (uvicorn HTTP 000). Ajout de `--strict-mcp-config` : `claude` n'utilise que
+  l'ensemble MCP filtré par jarvis (`mcp.json` + `services.py`), rien d'autre.
 - **Crash au démarrage `NameError: name 'asyncio' is not defined`.** `main.py` utilisait
   `asyncio` (`_memory_gauge_loop`, `asyncio.sleep`) sans l'importer → le lifespan `startup`
   levait une exception. Ajout de `import asyncio`.
