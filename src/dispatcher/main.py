@@ -27,6 +27,7 @@ from claude_runner import ClaudeRunner
 from channels.discord_bot import DiscordBot
 from channels.web_socket import ConnectionManager
 from conversations import channel_config, keys
+from docmost_archiver import DocmostArchiver
 from metrics import (
     MESSAGES_TOTAL,
     MESSAGE_DURATION_SECONDS,
@@ -52,7 +53,8 @@ app = FastAPI(title="Jarvis", version="0.1.0")
 claude = ClaudeRunner()
 ws_manager = ConnectionManager()
 notifier = Notifier()
-monitor = Monitor(claude_runner=claude, notifier=notifier)
+archiver = DocmostArchiver()
+monitor = Monitor(claude_runner=claude, notifier=notifier, archiver=archiver)
 introspector = Introspector(claude_runner=claude, notifier=notifier, registry=claude.registry)
 discord_bot: DiscordBot | None = None
 
@@ -241,6 +243,7 @@ def _seed_discord_channels():
 
 
 _MEMORY_DIR = os.getenv("JARVIS_MEMORY_DIR", "/home/jarvis/memory")
+_SKILLS_DIR = os.getenv("JARVIS_SKILLS_DIR", "/home/jarvis/skills")
 
 
 def _update_memory_gauges() -> None:
@@ -280,6 +283,23 @@ async def _memory_gauge_loop() -> None:
         except Exception as e:
             logger.debug("memory gauge update error: %s", e)
         await asyncio.sleep(300)
+
+
+async def _docmost_sync_loop() -> None:
+    """Sync memory and skills to Docmost every DOCMOST_SYNC_INTERVAL seconds."""
+    from docmost_archiver import SYNC_INTERVAL
+    if not archiver.enabled:
+        return
+    while True:
+        await asyncio.sleep(SYNC_INTERVAL)
+        try:
+            await asyncio.to_thread(archiver.sync_memory, _MEMORY_DIR)
+        except Exception as e:
+            logger.debug("docmost sync_memory error: %s", e)
+        try:
+            await asyncio.to_thread(archiver.sync_skills, _SKILLS_DIR)
+        except Exception as e:
+            logger.debug("docmost sync_skills error: %s", e)
 
 
 def _preclone_git_repos():
@@ -386,6 +406,13 @@ async def startup():
     # Pre-clone git repos in background thread (non-blocking)
     threading.Thread(target=_preclone_git_repos, daemon=True, name="git-preclone").start()
 
+    # Inject archiver into claude runner for conversation archiving
+    claude.set_archiver(archiver)
+    if archiver.enabled:
+        logger.info("Docmost archiver: enabled")
+    else:
+        logger.info("Docmost archiver: disabled (DOCMOST_URL or credentials not set)")
+
     # Channels - Discord
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
     if discord_token:
@@ -428,6 +455,9 @@ async def startup():
     except Exception as e:
         logger.debug("initial memory gauge update failed: %s", e)
     asyncio.create_task(_memory_gauge_loop())
+
+    # Docmost sync loop (memory + skills), if archiver is configured.
+    asyncio.create_task(_docmost_sync_loop())
 
     logger.info("Jarvis dispatcher ready")
 
