@@ -5,6 +5,11 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
 ## [Non publié]
 
 ### Fixed
+- **Pod bloqué au démarrage par le nettoyage des locks git (virtiofs/NFS).** L'entrypoint
+  faisait un `find … -delete` récursif sur **tout** `git-cache` (arbres de travail entiers) ;
+  sur virtiofs le `find` peut staller en attente FUSE (`request_wait_answer`) et bloquer
+  indéfiniment l'entrypoint → le dispatcher ne démarrait jamais. Désormais le balayage est
+  scopé aux seuls dossiers `.git` et **borné par un `timeout` par dépôt** (best-effort).
 - **Pod bloqué au démarrage par l'auth OAuth des MCP distants claude.ai.** `claude` était
   lancé avec `--mcp-config` mais **sans `--strict-mcp-config`** → il chargeait aussi les
   connecteurs de compte claude.ai (Gmail/Calendar/Drive), dont l'init OAuth **interactif**
