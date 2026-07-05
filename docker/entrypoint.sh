@@ -50,10 +50,16 @@ fi
 # We only ensure the runtime dir exists so create_skill has somewhere to write.
 mkdir -p "${JARVIS_SKILLS_DIR:-$HOME_DIR/skills}"
 
-# Nettoie les lock files git orphelins d'un run précédent (index.lock, config.lock…)
-# Le sandbox Claude bloque leur suppression depuis l'intérieur d'une session active,
-# donc on le fait ici au démarrage, avant que le dispatcher ne lance quoi que ce soit.
-find "${HOME_DIR}/git-cache" -name "*.lock" -delete 2>/dev/null || true
+# Nettoie les lock files git orphelins d'un run précédent (index.lock, config.lock…).
+# BORNÉ et scopé aux .git : sur virtiofs/NFS, un `find` récursif sur TOUT git-cache
+# (arbres de travail entiers) peut staller en attente FUSE (`request_wait_answer`) et
+# bloquer INDÉFINIMENT le démarrage — le dispatcher n'est alors jamais lancé. On ne
+# balaie donc que les dossiers `.git` (où vivent les locks git), avec un timeout par
+# dépôt, en best-effort : le démarrage n'est jamais retardé au-delà de la borne.
+for repo in "${HOME_DIR}"/git-cache/*/.git; do
+    [ -d "$repo" ] || continue
+    timeout 15 find "$repo" -name "*.lock" -delete 2>/dev/null || true
+done
 
 # Install/update Python dependencies
 if [ -f /opt/jarvis/app/requirements.txt ]; then
