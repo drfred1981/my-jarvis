@@ -152,7 +152,12 @@ class ClaudeRunner:
 
         mcp_path = self._get_mcp_config_path()
         if mcp_path:
-            cmd.extend(["--mcp-config", mcp_path])
+            # --strict-mcp-config: use ONLY jarvis's filtered server set. Without it,
+            # `claude` also loads user/project config AND the claude.ai account
+            # connectors (Gmail/Calendar/Drive…), whose interactive OAuth init blocks
+            # forever in a headless pod → the CLI never returns. Jarvis fully owns its
+            # MCP set via mcp.json + services.py, so nothing else should be loaded.
+            cmd.extend(["--mcp-config", mcp_path, "--strict-mcp-config"])
 
         if active_services:
             allowed = get_allowed_tools_string(active_services)
