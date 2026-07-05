@@ -85,7 +85,12 @@ class ClaudeRunner:
         self._lock = asyncio.Lock()
         self._runtime_mcp_config: str | None = None
         self._activity_listeners: list = []
+        self._archiver = None
         ACTIVE_SESSIONS.set(self.registry.count())
+
+    def set_archiver(self, archiver) -> None:
+        """Inject a DocmostArchiver for automatic conversation archiving."""
+        self._archiver = archiver
 
     def add_activity_listener(self, callback) -> None:
         """Register a callback fired on every genuine user message (e.g. to wake
@@ -200,7 +205,18 @@ class ClaudeRunner:
                              else "introspection")
                 _track_claude_usage(result_dict, conv_type)
 
-            return self._parse_claude_output(output, stderr_text)
+            response = self._parse_claude_output(output, stderr_text)
+
+            # Archive user-initiated turns to Docmost (fire-and-forget in thread).
+            if self._archiver and is_user_initiated and keys.is_user(conversation_key):
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        self._archiver.archive_conversation_turn,
+                        conversation_key, message[:500], response[:2000],
+                    )
+                )
+
+            return response
 
         except asyncio.TimeoutError:
             logger.error("Claude Code timeout for %s", conversation_key)
