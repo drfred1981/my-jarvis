@@ -165,9 +165,10 @@ DEFAULT_CHECKS = [
 class Monitor:
     """Runs periodic health checks via Claude Code and dispatches alerts."""
 
-    def __init__(self, claude_runner, notifier):
+    def __init__(self, claude_runner, notifier, archiver=None):
         self.claude_runner = claude_runner
         self.notifier = notifier
+        self._archiver = archiver
         self._tasks: list[asyncio.Task] = []
         self._enabled = os.getenv("JARVIS_MONITORING", "true").lower() == "true"
         self._alert_states: dict[str, AlertState] = {}
@@ -234,6 +235,16 @@ class Monitor:
         normalized = response.lower().strip()[:200]
         return hashlib.md5(normalized.encode()).hexdigest()
 
+    def _archive_result(self, check_name: str, response: str) -> None:
+        """Fire-and-forget archiving of a monitor check result to Docmost."""
+        if self._archiver:
+            import asyncio as _asyncio
+            _asyncio.create_task(
+                _asyncio.to_thread(
+                    self._archiver.archive_monitor_result, check_name, response
+                )
+            )
+
     async def _run_check_loop(self, check: Check):
         """Run a single check on a loop.
 
@@ -288,6 +299,7 @@ class Monitor:
                     # Always-emit checks (e.g. daily digest): no alert state, no pause.
                     MONITOR_CHECKS_TOTAL.labels(check=check.name, result="clear").inc()
                     await self.notifier.notify_monitoring(f"🌅 **{check.name}**\n\n{response}")
+                    self._archive_result(check.name, response)
                     logger.info("Check %s: digest sent (%d chars)", check.name, len(response))
                 elif response and not self._is_all_clear(response):
                     MONITOR_CHECKS_TOTAL.labels(check=check.name, result="alert").inc()
@@ -299,6 +311,7 @@ class Monitor:
                         f"_Check en pause. Acquitter avec `POST /api/alerts/{check.name}/ack`_"
                     )
                     self._record_alert(check.name, response)
+                    self._archive_result(check.name, response)
                     logger.info("Check %s: alert sent, check paused until acknowledged", check.name)
                 else:
                     MONITOR_CHECKS_TOTAL.labels(check=check.name, result="clear").inc()
