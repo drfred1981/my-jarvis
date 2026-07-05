@@ -5,6 +5,9 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
 ## [Non publié]
 
 ### Fixed
+- **Crash au démarrage `NameError: name 'asyncio' is not defined`.** `main.py` utilisait
+  `asyncio` (`_memory_gauge_loop`, `asyncio.sleep`) sans l'importer → le lifespan `startup`
+  levait une exception. Ajout de `import asyncio`.
 - **Continuité de conversation perdue (contexte oublié).** Le runtime passait
   `--session-id` à *chaque* appel `claude -p` et **jamais `--resume`** : sur la version
   `claude` déployée, réutiliser un `--session-id` ne reprenait pas la session → contexte

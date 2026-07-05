@@ -4,6 +4,7 @@ Central FastAPI application that receives messages from all channels
 (Discord, Web UI, Synology Chat) and routes them through Claude Code.
 """
 
+import asyncio
 import json
 import logging
 import os
