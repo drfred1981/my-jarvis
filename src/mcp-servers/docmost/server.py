@@ -1,7 +1,6 @@
 """MCP Server for DocMost (wiki & documentation).
 
-Provides tools to interact with DocMost via its REST API.
-Content is automatically converted from markdown to ProseMirror JSON format.
+Uses format=markdown for all content operations — Docmost converts to ProseMirror.
 
 Env vars:
   DOCMOST_URL, DOCMOST_API_KEY, DOCMOST_USER, DOCMOST_PASSWORD
@@ -10,8 +9,6 @@ Env vars:
 import json
 import logging
 import os
-import re
-import uuid
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -28,119 +25,6 @@ DOCMOST_PASSWORD = os.getenv("DOCMOST_PASSWORD", "")
 _session_cookies: dict = {}
 
 
-def _pid() -> str:
-    return uuid.uuid4().hex[:12]
-
-
-def _parse_inline(text: str) -> list:
-    nodes = []
-    parts = re.split(r"(\*\*[^*]+?\*\*|`[^`]+?`)", text)
-    for part in parts:
-        if not part:
-            continue
-        if part.startswith("**") and part.endswith("**") and len(part) > 4:
-            nodes.append({"type": "text", "text": part[2:-2],
-                          "marks": [{"type": "bold"}]})
-        elif part.startswith("`") and part.endswith("`") and len(part) > 2:
-            nodes.append({"type": "text", "text": part[1:-1],
-                          "marks": [{"type": "code"}]})
-        else:
-            nodes.append({"type": "text", "text": part})
-    return [n for n in nodes if n.get("text")]
-
-
-def _md_to_prosemirror(text: str) -> dict:
-    """Convert markdown / plain text to a ProseMirror doc JSON object."""
-    # Already ProseMirror JSON?
-    stripped = text.strip()
-    if stripped.startswith("{") and '"type"' in stripped:
-        try:
-            obj = json.loads(stripped)
-            if obj.get("type") == "doc":
-                return obj
-        except json.JSONDecodeError:
-            pass
-
-    nodes: list = []
-    in_code = False
-    code_lang = ""
-    code_lines: list = []
-    list_items: list = []
-    list_type = "bullet"
-
-    def flush_list():
-        if not list_items:
-            return
-        ttype = "orderedList" if list_type == "ordered" else "bulletList"
-        nodes.append({
-            "type": ttype,
-            "content": [
-                {
-                    "type": "listItem",
-                    "attrs": {"id": _pid()},
-                    "content": [{
-                        "type": "paragraph",
-                        "attrs": {"id": _pid(), "textAlign": None},
-                        "content": _parse_inline(item),
-                    }],
-                }
-                for item in list_items
-            ],
-        })
-        list_items.clear()
-
-    for line in text.split("\n"):
-        if line.startswith("```"):
-            if in_code:
-                flush_list()
-                nodes.append({
-                    "type": "codeBlock",
-                    "attrs": {"id": _pid(), "language": code_lang or None},
-                    "content": ([{"type": "text", "text": "\n".join(code_lines)}]
-                                if code_lines else []),
-                })
-                code_lines.clear(); code_lang = ""; in_code = False
-            else:
-                code_lang = line[3:].strip(); in_code = True
-            continue
-        if in_code:
-            code_lines.append(line); continue
-        if re.match(r"^(-{3,}|\*{3,}|_{3,})$", line.strip()):
-            flush_list()
-            nodes.append({"type": "horizontalRule", "attrs": {"id": _pid()}}); continue
-        m = re.match(r"^(#{1,6})\s+(.*)", line)
-        if m:
-            flush_list()
-            level = min(len(m.group(1)), 6)
-            content = _parse_inline(m.group(2).strip())
-            if content:
-                nodes.append({"type": "heading",
-                              "attrs": {"id": _pid(), "level": level,
-                                        "textAlign": None, "textColor": None},
-                              "content": content})
-            continue
-        m = re.match(r"^\d+\.\s+(.*)", line)
-        if m:
-            list_type = "ordered"; list_items.append(m.group(1)); continue
-        m = re.match(r"^[*\-]\s+(.*)", line)
-        if m:
-            list_type = "bullet"; list_items.append(m.group(1)); continue
-        if not line.strip():
-            flush_list(); continue
-        flush_list()
-        content = _parse_inline(line)
-        if content:
-            nodes.append({"type": "paragraph",
-                          "attrs": {"id": _pid(), "textAlign": None},
-                          "content": content})
-
-    flush_list()
-    if not nodes:
-        nodes.append({"type": "paragraph",
-                      "attrs": {"id": _pid(), "textAlign": None}, "content": []})
-    return {"type": "doc", "content": nodes}
-
-
 def _authenticate() -> dict:
     global _session_cookies
     if _session_cookies:
@@ -155,9 +39,11 @@ def _authenticate() -> dict:
 
 def _client() -> httpx.Client:
     if DOCMOST_API_KEY:
-        return httpx.Client(base_url=DOCMOST_URL,
-                            headers={"Authorization": f"Bearer {DOCMOST_API_KEY}"},
-                            timeout=30)
+        return httpx.Client(
+            base_url=DOCMOST_URL,
+            headers={"Authorization": f"Bearer {DOCMOST_API_KEY}"},
+            timeout=30,
+        )
     return httpx.Client(base_url=DOCMOST_URL, cookies=_authenticate(), timeout=30)
 
 
@@ -186,7 +72,7 @@ def get_space(space_id: str) -> str:
 
 @mcp.tool()
 def list_pages(space_id: str, page_id: str = "", limit: int = 50, page: int = 1) -> str:
-    """List pages in a space (sidebar tree). page_id = parent for children."""
+    """List pages in a space. page_id = parent page for children (empty = root)."""
     body = {"spaceId": space_id, "limit": limit, "page": page}
     if page_id:
         body["pageId"] = page_id
@@ -195,9 +81,13 @@ def list_pages(space_id: str, page_id: str = "", limit: int = 50, page: int = 1)
         resp.raise_for_status()
         data = resp.json()
     items = data.get("items", data.get("data", data))
+    if isinstance(items, dict):
+        items = items.get("items", [])
     if isinstance(items, list):
         return json.dumps([{"id": p.get("id"), "title": p.get("title"),
-                            "position": p.get("position")} for p in items], indent=2)
+                            "position": p.get("position"),
+                            "parentPageId": p.get("parentPageId"),
+                            "hasChildren": p.get("hasChildren")} for p in items], indent=2)
     return json.dumps(data, indent=2)
 
 
@@ -213,10 +103,11 @@ def get_page(page_id: str) -> str:
 @mcp.tool()
 def create_page(space_id: str, title: str, content: str = "",
                 parent_page_id: str = "") -> str:
-    """Create a new page. content accepts markdown or ProseMirror JSON string."""
+    """Create a new page. content is markdown text (converted server-side to ProseMirror)."""
     body: dict = {"spaceId": space_id, "title": title}
     if content:
-        body["content"] = _md_to_prosemirror(content)
+        body["content"] = content
+        body["format"] = "markdown"
     if parent_page_id:
         body["parentPageId"] = parent_page_id
     with _client() as c:
@@ -227,18 +118,41 @@ def create_page(space_id: str, title: str, content: str = "",
 
 @mcp.tool()
 def update_page(page_id: str, title: str = "", content: str = "",
-                parent_page_id: str = "") -> str:
-    """Update an existing page. content accepts markdown or ProseMirror JSON string.
-    parent_page_id moves the page under a new parent."""
+                operation: str = "replace") -> str:
+    """Update an existing page.
+
+    Args:
+        page_id: Page ID to update
+        title: New title (optional)
+        content: Markdown content (optional). operation controls how it's applied.
+        operation: 'replace' (default), 'append', or 'prepend'
+    """
     body: dict = {"pageId": page_id}
     if title:
         body["title"] = title
     if content:
-        body["content"] = _md_to_prosemirror(content)
-    if parent_page_id:
-        body["parentPageId"] = parent_page_id
+        body["content"] = content
+        body["format"] = "markdown"
+        body["operation"] = operation
     with _client() as c:
         resp = c.post("/api/pages/update", json=body)
+        resp.raise_for_status()
+    return json.dumps(resp.json(), indent=2)
+
+
+@mcp.tool()
+def move_page(page_id: str, parent_page_id: str, position: str = "a05WZ") -> str:
+    """Move a page under a new parent.
+
+    Args:
+        page_id: Page ID to move
+        parent_page_id: New parent page ID
+        position: Lexorank position string (5-12 chars, default 'a05WZ')
+    """
+    with _client() as c:
+        resp = c.post("/api/pages/move",
+                      json={"pageId": page_id, "parentPageId": parent_page_id,
+                            "position": position})
         resp.raise_for_status()
     return json.dumps(resp.json(), indent=2)
 
