@@ -118,7 +118,7 @@ class DocmostArchiver:
     # --- Page tree ---
 
     def _list_children(self, space_id: str, parent_id: Optional[str] = None) -> list:
-        body = {"spaceId": space_id, "limit": 200, "page": 1}
+        body = {"spaceId": space_id, "limit": 100, "page": 1}
         if parent_id:
             body["pageId"] = parent_id
         data = self._post("/api/pages/sidebar-pages", body)
