@@ -1,17 +1,17 @@
 """MCP Server for DocMost (wiki & documentation).
 
-Provides tools to interact with DocMost via its REST API:
-- List and manage spaces
-- Read, create, update, delete pages
-- Search content
-- Manage comments
+Provides tools to interact with DocMost via its REST API.
+Content is automatically converted from markdown to ProseMirror JSON format.
 
-Note: DocMost API uses POST for all endpoints.
+Env vars:
+  DOCMOST_URL, DOCMOST_API_KEY, DOCMOST_USER, DOCMOST_PASSWORD
 """
 
 import json
 import logging
 import os
+import re
+import uuid
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -28,16 +28,126 @@ DOCMOST_PASSWORD = os.getenv("DOCMOST_PASSWORD", "")
 _session_cookies: dict = {}
 
 
+def _pid() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def _parse_inline(text: str) -> list:
+    nodes = []
+    parts = re.split(r"(\*\*[^*]+?\*\*|`[^`]+?`)", text)
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith("**") and part.endswith("**") and len(part) > 4:
+            nodes.append({"type": "text", "text": part[2:-2],
+                          "marks": [{"type": "bold"}]})
+        elif part.startswith("`") and part.endswith("`") and len(part) > 2:
+            nodes.append({"type": "text", "text": part[1:-1],
+                          "marks": [{"type": "code"}]})
+        else:
+            nodes.append({"type": "text", "text": part})
+    return [n for n in nodes if n.get("text")]
+
+
+def _md_to_prosemirror(text: str) -> dict:
+    """Convert markdown / plain text to a ProseMirror doc JSON object."""
+    # Already ProseMirror JSON?
+    stripped = text.strip()
+    if stripped.startswith("{") and '"type"' in stripped:
+        try:
+            obj = json.loads(stripped)
+            if obj.get("type") == "doc":
+                return obj
+        except json.JSONDecodeError:
+            pass
+
+    nodes: list = []
+    in_code = False
+    code_lang = ""
+    code_lines: list = []
+    list_items: list = []
+    list_type = "bullet"
+
+    def flush_list():
+        if not list_items:
+            return
+        ttype = "orderedList" if list_type == "ordered" else "bulletList"
+        nodes.append({
+            "type": ttype,
+            "content": [
+                {
+                    "type": "listItem",
+                    "attrs": {"id": _pid()},
+                    "content": [{
+                        "type": "paragraph",
+                        "attrs": {"id": _pid(), "textAlign": None},
+                        "content": _parse_inline(item),
+                    }],
+                }
+                for item in list_items
+            ],
+        })
+        list_items.clear()
+
+    for line in text.split("\n"):
+        if line.startswith("```"):
+            if in_code:
+                flush_list()
+                nodes.append({
+                    "type": "codeBlock",
+                    "attrs": {"id": _pid(), "language": code_lang or None},
+                    "content": ([{"type": "text", "text": "\n".join(code_lines)}]
+                                if code_lines else []),
+                })
+                code_lines.clear(); code_lang = ""; in_code = False
+            else:
+                code_lang = line[3:].strip(); in_code = True
+            continue
+        if in_code:
+            code_lines.append(line); continue
+        if re.match(r"^(-{3,}|\*{3,}|_{3,})$", line.strip()):
+            flush_list()
+            nodes.append({"type": "horizontalRule", "attrs": {"id": _pid()}}); continue
+        m = re.match(r"^(#{1,6})\s+(.*)", line)
+        if m:
+            flush_list()
+            level = min(len(m.group(1)), 6)
+            content = _parse_inline(m.group(2).strip())
+            if content:
+                nodes.append({"type": "heading",
+                              "attrs": {"id": _pid(), "level": level,
+                                        "textAlign": None, "textColor": None},
+                              "content": content})
+            continue
+        m = re.match(r"^\d+\.\s+(.*)", line)
+        if m:
+            list_type = "ordered"; list_items.append(m.group(1)); continue
+        m = re.match(r"^[*\-]\s+(.*)", line)
+        if m:
+            list_type = "bullet"; list_items.append(m.group(1)); continue
+        if not line.strip():
+            flush_list(); continue
+        flush_list()
+        content = _parse_inline(line)
+        if content:
+            nodes.append({"type": "paragraph",
+                          "attrs": {"id": _pid(), "textAlign": None},
+                          "content": content})
+
+    flush_list()
+    if not nodes:
+        nodes.append({"type": "paragraph",
+                      "attrs": {"id": _pid(), "textAlign": None}, "content": []})
+    return {"type": "doc", "content": nodes}
+
+
 def _authenticate() -> dict:
-    """Authenticate via login/password and return session cookies with JWT."""
     global _session_cookies
     if _session_cookies:
         return _session_cookies
     with httpx.Client(base_url=DOCMOST_URL, timeout=30) as client:
-        resp = client.post("/api/auth/login", json={
-            "email": DOCMOST_USER,
-            "password": DOCMOST_PASSWORD,
-        })
+        resp = client.post("/api/auth/login",
+                           json={"email": DOCMOST_USER, "password": DOCMOST_PASSWORD})
         resp.raise_for_status()
         _session_cookies = dict(resp.cookies)
     return _session_cookies
@@ -45,242 +155,156 @@ def _authenticate() -> dict:
 
 def _client() -> httpx.Client:
     if DOCMOST_API_KEY:
-        return httpx.Client(
-            base_url=DOCMOST_URL,
-            headers={"Authorization": f"Bearer {DOCMOST_API_KEY}"},
-            timeout=30,
-        )
-    cookies = _authenticate()
-    return httpx.Client(
-        base_url=DOCMOST_URL,
-        cookies=cookies,
-        timeout=30,
-    )
+        return httpx.Client(base_url=DOCMOST_URL,
+                            headers={"Authorization": f"Bearer {DOCMOST_API_KEY}"},
+                            timeout=30)
+    return httpx.Client(base_url=DOCMOST_URL, cookies=_authenticate(), timeout=30)
 
 
 @mcp.tool()
 def list_spaces(limit: int = 20, page: int = 1) -> str:
-    """List all spaces in the workspace.
-
-    Args:
-        limit: Max number of spaces (default: 20)
-        page: Page number (default: 1)
-    """
-    with _client() as client:
-        resp = client.post("/api/spaces/", json={"limit": limit, "page": page})
+    """List all spaces in the workspace."""
+    with _client() as c:
+        resp = c.post("/api/spaces/", json={"limit": limit, "page": page})
         resp.raise_for_status()
         data = resp.json()
     items = data.get("items", data.get("data", data))
     if isinstance(items, list):
-        return json.dumps([{
-            "id": s.get("id"),
-            "name": s.get("name"),
-            "slug": s.get("slug"),
-            "description": s.get("description", ""),
-        } for s in items], indent=2)
+        return json.dumps([{"id": s.get("id"), "name": s.get("name"),
+                            "slug": s.get("slug")} for s in items], indent=2)
     return json.dumps(data, indent=2)
 
 
 @mcp.tool()
 def get_space(space_id: str) -> str:
-    """Get details of a specific space.
-
-    Args:
-        space_id: Space ID
-    """
-    with _client() as client:
-        resp = client.post("/api/spaces/info", json={"spaceId": space_id})
+    """Get details of a specific space."""
+    with _client() as c:
+        resp = c.post("/api/spaces/info", json={"spaceId": space_id})
         resp.raise_for_status()
     return json.dumps(resp.json(), indent=2)
 
 
 @mcp.tool()
 def list_pages(space_id: str, page_id: str = "", limit: int = 50, page: int = 1) -> str:
-    """List pages in a space (sidebar tree).
-
-    Args:
-        space_id: Space ID
-        page_id: Parent page ID to list children (empty for root pages)
-        limit: Max results (default: 50)
-        page: Page number (default: 1)
-    """
+    """List pages in a space (sidebar tree). page_id = parent for children."""
     body = {"spaceId": space_id, "limit": limit, "page": page}
     if page_id:
         body["pageId"] = page_id
-    with _client() as client:
-        resp = client.post("/api/pages/sidebar-pages", json=body)
+    with _client() as c:
+        resp = c.post("/api/pages/sidebar-pages", json=body)
         resp.raise_for_status()
         data = resp.json()
     items = data.get("items", data.get("data", data))
     if isinstance(items, list):
-        return json.dumps([{
-            "id": p.get("id"),
-            "title": p.get("title"),
-            "slug": p.get("slug", ""),
-            "icon": p.get("icon", ""),
-            "position": p.get("position"),
-        } for p in items], indent=2)
+        return json.dumps([{"id": p.get("id"), "title": p.get("title"),
+                            "position": p.get("position")} for p in items], indent=2)
     return json.dumps(data, indent=2)
 
 
 @mcp.tool()
 def get_page(page_id: str) -> str:
-    """Get full content of a page.
-
-    Args:
-        page_id: Page ID
-    """
-    with _client() as client:
-        resp = client.post("/api/pages/info", json={"pageId": page_id})
+    """Get full content of a page."""
+    with _client() as c:
+        resp = c.post("/api/pages/info", json={"pageId": page_id})
         resp.raise_for_status()
     return json.dumps(resp.json(), indent=2)
 
 
 @mcp.tool()
-def create_page(space_id: str, title: str, content: str = "", parent_page_id: str = "") -> str:
-    """Create a new page in a space.
-
-    Args:
-        space_id: Space ID where the page will be created
-        title: Page title
-        content: Page content in markdown/JSON format (optional)
-        parent_page_id: Parent page ID for nested pages (optional)
-    """
-    body = {"spaceId": space_id, "title": title}
+def create_page(space_id: str, title: str, content: str = "",
+                parent_page_id: str = "") -> str:
+    """Create a new page. content accepts markdown or ProseMirror JSON string."""
+    body: dict = {"spaceId": space_id, "title": title}
     if content:
-        body["content"] = content
+        body["content"] = _md_to_prosemirror(content)
     if parent_page_id:
         body["parentPageId"] = parent_page_id
-    with _client() as client:
-        resp = client.post("/api/pages/create", json=body)
+    with _client() as c:
+        resp = c.post("/api/pages/create", json=body)
         resp.raise_for_status()
     return json.dumps(resp.json(), indent=2)
 
 
 @mcp.tool()
-def update_page(page_id: str, title: str = "", content: str = "") -> str:
-    """Update an existing page.
-
-    Args:
-        page_id: Page ID to update
-        title: New title (optional, leave empty to keep current)
-        content: New content (optional, leave empty to keep current)
-    """
-    body = {"pageId": page_id}
+def update_page(page_id: str, title: str = "", content: str = "",
+                parent_page_id: str = "") -> str:
+    """Update an existing page. content accepts markdown or ProseMirror JSON string.
+    parent_page_id moves the page under a new parent."""
+    body: dict = {"pageId": page_id}
     if title:
         body["title"] = title
     if content:
-        body["content"] = content
-    with _client() as client:
-        resp = client.post("/api/pages/update", json=body)
+        body["content"] = _md_to_prosemirror(content)
+    if parent_page_id:
+        body["parentPageId"] = parent_page_id
+    with _client() as c:
+        resp = c.post("/api/pages/update", json=body)
         resp.raise_for_status()
     return json.dumps(resp.json(), indent=2)
 
 
 @mcp.tool()
 def delete_page(page_id: str) -> str:
-    """Delete a page.
-
-    Args:
-        page_id: Page ID to delete
-    """
-    with _client() as client:
-        resp = client.post("/api/pages/delete", json={"pageId": page_id})
+    """Delete a page."""
+    with _client() as c:
+        resp = c.post("/api/pages/delete", json={"pageId": page_id})
         resp.raise_for_status()
     return json.dumps({"status": "deleted", "pageId": page_id})
 
 
 @mcp.tool()
 def search_pages(query: str, space_id: str = "", limit: int = 20) -> str:
-    """Search pages by text content.
-
-    Args:
-        query: Search query
-        space_id: Filter by space ID (optional)
-        limit: Max results (default: 20)
-    """
+    """Search pages by text content."""
     body = {"query": query, "limit": limit}
     if space_id:
         body["spaceId"] = space_id
-    with _client() as client:
-        resp = client.post("/api/search", json=body)
+    with _client() as c:
+        resp = c.post("/api/search", json=body)
         resp.raise_for_status()
         data = resp.json()
     items = data.get("items", data.get("data", data))
     if isinstance(items, list):
-        return json.dumps([{
-            "id": p.get("id"),
-            "title": p.get("title"),
-            "slug": p.get("slug", ""),
-            "spaceId": p.get("spaceId", ""),
-            "highlight": p.get("highlight", ""),
-        } for p in items], indent=2)
+        return json.dumps([{"id": p.get("id"), "title": p.get("title"),
+                            "highlight": p.get("highlight", "")} for p in items], indent=2)
     return json.dumps(data, indent=2)
 
 
 @mcp.tool()
 def get_recent_pages(space_id: str = "", limit: int = 20, page: int = 1) -> str:
-    """Get recently modified pages.
-
-    Args:
-        space_id: Filter by space ID (optional)
-        limit: Max results (default: 20)
-        page: Page number (default: 1)
-    """
+    """Get recently modified pages."""
     body = {"limit": limit, "page": page}
     if space_id:
         body["spaceId"] = space_id
-    with _client() as client:
-        resp = client.post("/api/pages/recent", json=body)
+    with _client() as c:
+        resp = c.post("/api/pages/recent", json=body)
         resp.raise_for_status()
         data = resp.json()
     items = data.get("items", data.get("data", data))
     if isinstance(items, list):
-        return json.dumps([{
-            "id": p.get("id"),
-            "title": p.get("title"),
-            "spaceId": p.get("spaceId", ""),
-            "updatedAt": p.get("updatedAt", ""),
-            "creatorName": p.get("creator", {}).get("name", "") if isinstance(p.get("creator"), dict) else "",
-        } for p in items], indent=2)
+        return json.dumps([{"id": p.get("id"), "title": p.get("title"),
+                            "updatedAt": p.get("updatedAt", "")} for p in items], indent=2)
     return json.dumps(data, indent=2)
 
 
 @mcp.tool()
 def list_comments(page_id: str, limit: int = 50, page: int = 1) -> str:
-    """List comments on a page.
-
-    Args:
-        page_id: Page ID
-        limit: Max results (default: 50)
-        page: Page number (default: 1)
-    """
-    with _client() as client:
-        resp = client.post("/api/comments/", json={"pageId": page_id, "limit": limit, "page": page})
+    """List comments on a page."""
+    with _client() as c:
+        resp = c.post("/api/comments/", json={"pageId": page_id, "limit": limit, "page": page})
         resp.raise_for_status()
         data = resp.json()
     items = data.get("items", data.get("data", data))
     if isinstance(items, list):
-        return json.dumps([{
-            "id": c.get("id"),
-            "content": c.get("content", ""),
-            "creatorId": c.get("creatorId", ""),
-            "resolved": c.get("resolved", False),
-            "createdAt": c.get("createdAt", ""),
-        } for c in items], indent=2)
+        return json.dumps([{"id": c.get("id"), "content": c.get("content", ""),
+                            "createdAt": c.get("createdAt", "")} for c in items], indent=2)
     return json.dumps(data, indent=2)
 
 
 @mcp.tool()
 def create_comment(page_id: str, content: str) -> str:
-    """Add a comment to a page.
-
-    Args:
-        page_id: Page ID
-        content: Comment content
-    """
-    with _client() as client:
-        resp = client.post("/api/comments/create", json={"pageId": page_id, "content": content})
+    """Add a comment to a page."""
+    with _client() as c:
+        resp = c.post("/api/comments/create", json={"pageId": page_id, "content": content})
         resp.raise_for_status()
     return json.dumps(resp.json(), indent=2)
 
