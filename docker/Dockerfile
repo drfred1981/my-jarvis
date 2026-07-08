@@ -92,6 +92,23 @@ COPY --chown=jarvis:jarvis skills/ /opt/jarvis/seed/skills/
 # (lus en place par src/dispatcher/context/bmad.py, jamais seedés sur le volume).
 COPY --chown=jarvis:jarvis _bmad/ /opt/jarvis/seed/_bmad/
 
+# --- Corps des workflows BMAD (installés au build, PAS vendorés dans git) ---
+# L'installeur BMAD Method dépose les SKILL.md des workflows dans
+# /opt/jarvis/seed/.claude/skills/bmad-* (~18 Mo, 6 modules). Le lecteur de skills
+# (mcp-servers/skills/catalog.py + dispatcher context/skills.py) les résout à la
+# demande via read_skill("bmad-…") ; le catalogue BMAD injecté (context/bmad.py) en
+# donne les noms. Version épinglée pour la reproductibilité ; --all-stable fige les
+# modules externes (cis/tea/wds/bmb) sur leur dernier tag stable.
+ARG BMAD_METHOD_VERSION=6.10.0
+RUN npx -y bmad-method@${BMAD_METHOD_VERSION} install \
+        --directory /opt/jarvis/seed \
+        --modules bmm,cis,tea,wds,bmb \
+        --tools claude-code \
+        --all-stable \
+        --yes \
+    && rm -rf /root/.npm ~/.npm /tmp/* || \
+    (echo "WARN: échec install BMAD au build — bodies absents, catalogue awareness OK" && true)
+
 # Fix permissions
 RUN chown -R jarvis:jarvis /opt/jarvis /home/jarvis
 
