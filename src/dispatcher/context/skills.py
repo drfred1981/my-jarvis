@@ -27,13 +27,22 @@ logger = logging.getLogger(__name__)
 
 SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_DIR", "/home/jarvis/skills"))           # runtime (volume)
 SEED_SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_SEED_DIR", "/opt/jarvis/seed/skills"))  # repo (frozen, RO)
+# BMAD workflow bodies (bmad-*/wds-*, installed at image build). Resolved for attached
+# skills only, never listed in the Jarvis catalog — BMAD has its own injected catalog
+# (see `bmad`). Mirror of catalog.BMAD_SKILLS_DIR on the MCP side.
+BMAD_SKILLS_DIR = Path(os.getenv("JARVIS_BMAD_SKILLS_DIR", "/opt/jarvis/seed/.claude/skills"))
 MEMORY_DIR = Path(os.getenv("JARVIS_MEMORY_DIR", "/home/jarvis/memory"))
 ATTACH_DIR = MEMORY_DIR / "skill-attachments"
 
 
 def _skill_bases() -> list[Path]:
-    """Skill base dirs in precedence order: repo (frozen) first, runtime second."""
+    """Jarvis skill base dirs (catalog/listing): repo (frozen) first, runtime second."""
     return [SEED_SKILLS_DIR, SKILLS_DIR]
+
+
+def _read_bases() -> list[Path]:
+    """Resolution for attached skills: Jarvis skills first, then BMAD bodies."""
+    return [SEED_SKILLS_DIR, SKILLS_DIR, BMAD_SKILLS_DIR]
 
 MAX_CATALOG_CHARS = 2500
 MAX_SKILL_CHARS = 2000
@@ -60,8 +69,8 @@ def _parse_frontmatter(text: str) -> dict:
 
 
 def _skill_file(name: str) -> Path:
-    """Resolve a skill's SKILL.md, repo (frozen) taking precedence over runtime."""
-    for base in _skill_bases():
+    """Resolve a skill's SKILL.md — Jarvis skills first, then BMAD bodies."""
+    for base in _read_bases():
         p = base / name / "SKILL.md"
         if p.is_file():
             return p

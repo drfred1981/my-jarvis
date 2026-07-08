@@ -27,13 +27,26 @@ logger = logging.getLogger(__name__)
 SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_DIR", "/home/jarvis/skills"))
 # Repo (image, read-only) — frozen baseline; wins on name collision.
 SEED_SKILLS_DIR = Path(os.getenv("JARVIS_SKILLS_SEED_DIR", "/opt/jarvis/seed/skills"))
+# BMAD workflow bodies (bmad-*/wds-* installed at image build, read-only). Resolved
+# for read_skill/attach_skill only — NEVER listed in the Jarvis catalog: BMAD has its
+# own injected catalog (dispatcher context/bmad.py). Lets Jarvis charge le corps d'un
+# workflow BMAD à la demande via read_skill("bmad-prd"), etc.
+BMAD_SKILLS_DIR = Path(os.getenv("JARVIS_BMAD_SKILLS_DIR", "/opt/jarvis/seed/.claude/skills"))
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 def _bases() -> list[Path]:
-    """Skill base dirs in precedence order: repo (frozen) first, runtime second."""
+    """Jarvis skill base dirs in precedence order: repo (frozen) first, runtime second.
+
+    Used for listing/creating Jarvis's own skills. Excludes BMAD on purpose.
+    """
     return [SEED_SKILLS_DIR, SKILLS_DIR]
+
+
+def _read_bases() -> list[Path]:
+    """Resolution order for read/attach: Jarvis skills first, then BMAD bodies."""
+    return [SEED_SKILLS_DIR, SKILLS_DIR, BMAD_SKILLS_DIR]
 
 
 def is_repo_skill(name: str) -> bool:
@@ -56,8 +69,8 @@ def _parse_frontmatter(text: str) -> dict:
 
 
 def skill_path(name: str) -> Path:
-    """Resolve a skill to its SKILL.md, repo (frozen) taking precedence."""
-    for base in _bases():
+    """Resolve a skill to its SKILL.md — Jarvis skills first, then BMAD bodies."""
+    for base in _read_bases():
         p = base / name / "SKILL.md"
         if p.is_file():
             return p
