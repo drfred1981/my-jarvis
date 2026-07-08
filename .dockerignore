@@ -9,3 +9,7 @@ docker/docker-compose.yml
 __pycache__
 *.pyc
 node_modules
+
+# BMAD: ship only the capability catalogs into the image, nothing else from _bmad/
+_bmad/**
+!_bmad/**/module-help.csv

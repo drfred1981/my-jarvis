@@ -11,3 +11,12 @@ build/
 # Claude Code - keep settings, ignore transient data
 .claude/*
 !.claude/settings.json
+
+# BMAD install — track only the capability catalogs (module-help.csv), which feed
+# the injected BMAD context (src/dispatcher/context/bmad.py). Everything else under
+# _bmad/ (personal config.user.*, scripts, module bodies) stays local.
+_bmad/*
+!_bmad/*/
+!_bmad/module-help.csv
+_bmad/*/*
+!_bmad/*/module-help.csv

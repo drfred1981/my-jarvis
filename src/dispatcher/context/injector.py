@@ -21,7 +21,7 @@ import os
 
 from conversations import keys
 
-from . import skills
+from . import bmad, skills
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,9 @@ def build_block(key: str, framing: str = "") -> str:
         catalog = skills.catalog_block()
         if catalog:
             sections.append(catalog)
+        bmad_catalog = bmad.catalog_block()
+        if bmad_catalog:
+            sections.append(bmad_catalog)
 
     if keys.is_user(key):
         local_ctx = _read_capped(local_context_name(key), MAX_LOCAL_CHARS)
