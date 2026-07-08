@@ -88,6 +88,9 @@ COPY --chown=jarvis:jarvis CLAUDE.md mcp.json /opt/jarvis/seed/
 COPY --chown=jarvis:jarvis .claude/ /opt/jarvis/seed/.claude/
 COPY --chown=jarvis:jarvis memory/ /opt/jarvis/seed/memory/
 COPY --chown=jarvis:jarvis skills/ /opt/jarvis/seed/skills/
+# BMAD capability catalogs — .dockerignore ne laisse passer que les module-help.csv
+# (lus en place par src/dispatcher/context/bmad.py, jamais seedés sur le volume).
+COPY --chown=jarvis:jarvis _bmad/ /opt/jarvis/seed/_bmad/
 
 # Fix permissions
 RUN chown -R jarvis:jarvis /opt/jarvis /home/jarvis

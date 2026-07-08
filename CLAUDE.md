@@ -216,6 +216,28 @@ chaque conversation de repo) :
    anti-doublon) **+** corps de MR structuré (Context / Changes / Tests / Risks).
 4. **MR via `git-write`**, jamais de merge (rôle Developer).
 
+## Capacités BMAD (méthodologie de dev)
+
+Le dépôt embarque la méthode **BMAD** (BMad Method + modules `wds`/`cis`/`tea`/`bmb`
+et l'automation `bmad-loop`), installée sous `_bmad/`. Le dispatcher t'injecte
+automatiquement, dans chaque conversation utilisateur/introspection, un bloc
+**« Capacités BMAD »** : le catalogue des workflows BMAD disponibles (nom + code menu),
+groupé par module. C'est du code qui le construit (`context/bmad.py`, lu depuis les
+`_bmad/*/module-help.csv`) — tu n'as rien à charger.
+
+Comment t'en servir :
+- **Sensibilisation, pas exécution clé-en-main** : le bloc te donne les capacités et
+  leurs codes (`PRD`, `CA`, `SP`, `CS`, `DS`, `CR`…), pas forcément le corps exécutable
+  de chaque procédure (BMAD vit en amont). Mobilise-les surtout pour **cadrer et piloter
+  le développement d'un repo** : product brief → PRD → architecture → epics/stories →
+  sprint planning → dev story → code review.
+- **Quand une demande porte sur la conception ou la conduite d'un projet logiciel**
+  (dans un thread de repo notamment), raisonne avec la grille BMAD et propose l'étape
+  BMAD pertinente au lieu d'improviser — cohérent avec ta posture `coach` et le skill
+  `repo-workflow`.
+- Ça complète tes **skills** propres (`skills/`, MCP `skills`) : les skills sont tes
+  procédures exécutables ; le catalogue BMAD est la carte de la méthode de dev.
+
 ## Scripts réutilisables : fredtool/jarvis/
 
 Repo : `drfred1981/fred-tool`, clone local : `/home/jarvis/git-cache/fredtool/`, répertoire dédié : **`fredtool/jarvis/`**.
@@ -470,7 +492,8 @@ une clé structurée par contexte (`discord:dm:<id>`, `web:<session>`, `introspe
 système du calcul d'activité utilisateur). Avant chaque tour, `context/injector.py` **préfixe**
 le message d'un bloc de contexte lu directement sur le NFS mémoire (local `conversations/<clé>`
 + global `global/state`) — sans dépenser d'appel MCP ; `context/skills.py` injecte le catalogue
-de skills (hot-reload). Les canaux d'entrée vivent dans `channels/` (`discord_bot.py`,
+de skills (hot-reload) et `context/bmad.py` le catalogue **BMAD** (lu depuis les
+`_bmad/*/module-help.csv` embarqués dans l'image, cf. Dockerfile). Les canaux d'entrée vivent dans `channels/` (`discord_bot.py`,
 `synology_chat.py`, `web_socket.py`) ; `notifier.py` pousse les alertes sortantes.
 
 **UI web statique** : `src/web-ui/` (HTML/CSS/JS vanilla) est servie par `main.py` sur `/`
