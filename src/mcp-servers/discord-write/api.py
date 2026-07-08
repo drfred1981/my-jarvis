@@ -12,8 +12,10 @@ Requires env: DISCORD_BOT_TOKEN.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from pathlib import Path
 
 import httpx
 
@@ -21,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 API = "https://discord.com/api/v10"
+
+# Max upload size. Discord's default (non-boosted guild) is 25 MiB; a boosted
+# guild allows more, but 25 is the safe universal ceiling. Overridable.
+MAX_UPLOAD_BYTES = int(os.getenv("DISCORD_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 
 # Thread channel types.
 PUBLIC_THREAD = 11
@@ -83,6 +89,44 @@ def post_message(channel_id: str, content: str) -> dict:
             return {"error": err, "sent": sent}
         sent.append(str(data.get("id")))
     return {"ok": True, "channel_id": str(channel_id), "messages": sent}
+
+
+def post_file(channel_id: str, file_path: str, content: str = "") -> dict:
+    """Upload a local file as an attachment to a channel/thread, with optional text.
+
+    Multipart POST (not the JSON `_request` path): Discord expects a `payload_json`
+    field plus the file part, and httpx must set the multipart Content-Type itself —
+    so we send an auth-only header here.
+    """
+    if not TOKEN:
+        return {"error": "DISCORD_BOT_TOKEN not set"}
+    p = Path(file_path)
+    if not p.is_file():
+        return {"error": f"file not found: {file_path}"}
+    size = p.stat().st_size
+    if size > MAX_UPLOAD_BYTES:
+        return {"error": f"file too large: {size} bytes > {MAX_UPLOAD_BYTES} "
+                         f"(DISCORD_MAX_UPLOAD_MB)"}
+    body: dict = {}
+    if content.strip():
+        body["content"] = content[:2000]
+    try:
+        with p.open("rb") as fh:
+            resp = httpx.request(
+                "POST", f"{API}/channels/{channel_id}/messages",
+                headers={"Authorization": f"Bot {TOKEN}"},
+                data={"payload_json": json.dumps(body)},
+                files={"files[0]": (p.name, fh, "application/octet-stream")},
+                timeout=120,
+            )
+    except httpx.HTTPError as e:
+        return {"error": f"Discord API error: {e}"}
+    if resp.status_code >= 300:
+        return {"error": f"Discord API {resp.status_code}: {resp.text[:300]}"}
+    data = resp.json() if resp.content else {}
+    return {"ok": True, "channel_id": str(channel_id),
+            "message_id": str(data.get("id")), "filename": p.name, "size": size,
+            "attachments": [a.get("url") for a in data.get("attachments", [])]}
 
 
 def list_active_threads(guild_id: str) -> dict:

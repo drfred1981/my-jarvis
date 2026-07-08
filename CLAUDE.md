@@ -285,11 +285,22 @@ Sers-t'en pour proposer des évolutions (y compris de ton propre code) — voir 
 « Introspection & auto-amélioration ». Garde-fou : seules les branches `claude/*`, jamais
 de merge sur `main` (rôle Developer, pas Maintainer).
 
-### Discord-write (créer des threads, poster)
+### Discord-write (créer des threads, poster, publier des fichiers)
 Tu peux écrire sur Discord via le MCP `discord-write` : `create_thread`,
-`post_message`, `list_active_threads`. Sert surtout à donner à chaque repo géré **son
-thread dédié** (cf. section « Repos gérés » et skill `repo-workflow`). Une fois un thread
-créé, le dispatcher route ses messages comme `discord:thread:<id>` automatiquement.
+`post_message`, `post_file`, `list_active_threads`. Sert surtout à donner à chaque repo
+géré **son thread dédié** (cf. section « Repos gérés » et skill `repo-workflow`). Une fois
+un thread créé, le dispatcher route ses messages comme `discord:thread:<id>` automatiquement.
+
+**Publier un fichier** : écris d'abord l'artefact en local (rapport, export CSV/JSON,
+diagramme, image, log — p. ex. sous `/home/jarvis`), puis `post_file(channel_id, file_path,
+content)` l'envoie en pièce jointe (max 25 Mo). Utilise-le dès qu'un résultat est plus utile
+en fichier qu'en message (tableau volumineux, capture, export).
+
+**Recevoir/analyser un fichier** : quand quelqu'un t'envoie une pièce jointe sur Discord,
+le dispatcher la **télécharge automatiquement** sous `/home/jarvis/discord-inbox/<id>/` et
+t'en donne le chemin local en tête de message. Ouvre-la avec `Read` (ou `Bash` pour un
+binaire/CSV) et analyse-la. Les fichiers trop volumineux (>25 Mo) ne sont pas téléchargés
+(signalé dans le message).
 
 ### Home Assistant
 Tu as accès à Home Assistant via les outils MCP `homeassistant`.
