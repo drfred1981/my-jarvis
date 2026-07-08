@@ -16,6 +16,7 @@ Optional:
   DOCMOST_SYNC_INTERVAL     — Memory/skills sync interval in seconds (default: 3600)
 """
 
+import json
 import logging
 import os
 import re
@@ -41,16 +42,34 @@ SECTION_MONITORING = "Monitoring"
 SECTION_MEMORY = "Mémoire Jarvis"
 SECTION_SKILLS = "Skills"
 
-CHANNEL_NAMES: dict[str, str] = {
-    "discord:channel:1521595293907554456": "my-jarvis",
-    "discord:channel:1521403385021206599": "apps-k8s",
-    "discord:channel:1521402585498783754": "home-assistant",
-    "discord:channel:1522337932349018123": "plasma",
-    "discord:channel:1477772827091533976": "général",
-    "discord:channel:1521068864190943302": "homelab",
-    "discord:channel:1522648936383250533": "paperdms",
-    "discord:channel:1522649333101760734": "melimath",
-}
+def _build_channel_names() -> dict[str, str]:
+    """Build channel name mapping from DISCORD_CHANNEL_IDS env var.
+
+    Each entry has {id, description}. Name is extracted from description:
+    - "Pilotage du repo <name>" or "l'application <name>" → <name>
+    - Otherwise: first two words joined with '-'
+    """
+    raw = os.getenv("DISCORD_CHANNEL_IDS", "[]")
+    try:
+        channels = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("DISCORD_CHANNEL_IDS: invalid JSON, channel names unavailable")
+        return {}
+    result: dict[str, str] = {}
+    for ch in channels:
+        cid = str(ch.get("id", "")).strip()
+        desc = ch.get("description", "")
+        m = re.search(r"(?:repo|l'application)\s+([\w-]+)", desc, re.IGNORECASE)
+        if m:
+            name = m.group(1)
+        else:
+            words = re.findall(r"[\w]+", desc.lower())[:2]
+            name = "-".join(words) if words else f"channel-{cid}"
+        result[f"discord:channel:{cid}"] = name
+    return result
+
+
+CHANNEL_NAMES: dict[str, str] = _build_channel_names()
 
 
 # ---------------------------------------------------------------------------
