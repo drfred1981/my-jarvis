@@ -5,6 +5,16 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
 ## [Non publié]
 
 ### Added
+- **Transfert de fichiers Discord (publier + recevoir/analyser).** Jarvis peut désormais
+  **publier un fichier** sur un salon/thread — nouvel outil `post_file(channel_id,
+  file_path, content)` du MCP `discord-write` (upload multipart REST, max 25 Mo via
+  `DISCORD_MAX_UPLOAD_MB`) — et **recevoir des fichiers** : le bot d'entrée
+  (`channels/discord_bot.py`) télécharge les pièces jointes d'un message sous
+  `JARVIS_DISCORD_INBOX/<message_id>/` (défaut `/home/jarvis/discord-inbox`, sous le cwd
+  de l'agent) et injecte leurs chemins locaux dans le prompt pour que Jarvis les lise et
+  les analyse. Noms de fichiers assainis (anti-traversal), items >25 Mo signalés et non
+  téléchargés, messages sans texte mais avec pièce jointe désormais traités. Le bot
+  requiert la permission Discord **Attach Files**. Doc : `discord-write/README.md`, CLAUDE.md.
 - **Sensibilisation aux capacités BMAD dans le contexte injecté.** Jarvis connaît
   désormais, dans chaque conversation utilisateur/introspection, le catalogue des
   workflows BMAD installés sous `_bmad/` (BMad Method + modules `wds`/`cis`/`tea`/`bmb`

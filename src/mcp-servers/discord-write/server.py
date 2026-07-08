@@ -44,6 +44,18 @@ def post_message(channel_id: str, content: str) -> str:
 
 
 @mcp.tool()
+def post_file(channel_id: str, file_path: str, content: str = "") -> str:
+    """Publish a local file as an attachment to a channel or thread (a thread id
+    works as channel_id), with optional message text.
+
+    Use to send a generated artefact to Discord — a report, export, log, diagram,
+    image, CSV… Write the file first (e.g. under `/home/jarvis`), then pass its path.
+    `file_path` must be readable by Jarvis; max 25 MiB by default. Returns the
+    message id and the uploaded attachment URL(s)."""
+    return _j(api.post_file(channel_id, file_path, content))
+
+
+@mcp.tool()
 def list_active_threads(guild_id: str) -> str:
     """List active threads in a guild — to find an existing repo thread before
     creating a new one."""
