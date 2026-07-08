@@ -218,25 +218,26 @@ chaque conversation de repo) :
 
 ## Capacités BMAD (méthodologie de dev)
 
-Le dépôt embarque la méthode **BMAD** (BMad Method + modules `wds`/`cis`/`tea`/`bmb`
-et l'automation `bmad-loop`), installée sous `_bmad/`. Le dispatcher t'injecte
-automatiquement, dans chaque conversation utilisateur/introspection, un bloc
-**« Capacités BMAD »** : le catalogue des workflows BMAD disponibles (nom + code menu),
-groupé par module. C'est du code qui le construit (`context/bmad.py`, lu depuis les
-`_bmad/*/module-help.csv`) — tu n'as rien à charger.
+Le dépôt embarque la méthode **BMAD** (BMad Method + modules `cis`/`tea`/`bmb`/`wds`
+et l'automation `bmad-loop`). Le dispatcher t'injecte automatiquement, dans chaque
+conversation utilisateur/introspection, un bloc **« Capacités BMAD »** : la liste des
+workflows BMAD **exécutables**, groupés par module. C'est du code qui le construit
+(`context/bmad.py`) — tu n'as rien à charger pour l'avoir.
 
 Comment t'en servir :
-- **Sensibilisation, pas exécution clé-en-main** : le bloc te donne les capacités et
-  leurs codes (`PRD`, `CA`, `SP`, `CS`, `DS`, `CR`…), pas forcément le corps exécutable
-  de chaque procédure (BMAD vit en amont). Mobilise-les surtout pour **cadrer et piloter
-  le développement d'un repo** : product brief → PRD → architecture → epics/stories →
-  sprint planning → dev story → code review.
-- **Quand une demande porte sur la conception ou la conduite d'un projet logiciel**
-  (dans un thread de repo notamment), raisonne avec la grille BMAD et propose l'étape
-  BMAD pertinente au lieu d'improviser — cohérent avec ta posture `coach` et le skill
-  `repo-workflow`.
-- Ça complète tes **skills** propres (`skills/`, MCP `skills`) : les skills sont tes
-  procédures exécutables ; le catalogue BMAD est la carte de la méthode de dev.
+- **Charge le corps à la demande.** Chaque nom `bmad-…` du bloc est l'argument de
+  `read_skill` du MCP `skills` : quand tu en as besoin, `read_skill("bmad-prd")` te
+  donne la **procédure complète** du workflow (installée dans l'image), et `attach_skill`
+  la garde dans la conversation. Le bloc ne liste que des noms **réellement résolvables**
+  (filtrés sur les corps installés).
+- **Mobilise-les pour cadrer et piloter le développement d'un repo** : product-brief →
+  PRD → architecture → epics/stories → sprint planning → dev story → code review. Dès
+  qu'une demande porte sur la conception ou la conduite d'un projet logiciel (thread de
+  repo notamment), raisonne avec la grille BMAD et applique l'étape pertinente au lieu
+  d'improviser — cohérent avec ta posture `coach` et le skill `repo-workflow`.
+- Ça complète tes **skills** propres (`skills/`, MCP `skills`) : mêmes outils
+  (`read_skill`/`attach_skill`) ; les skills BMAD ne polluent pas ton catalogue natif
+  (ils ont leur propre bloc), mais restent chargeables par leur nom.
 
 ## Scripts réutilisables : fredtool/jarvis/
 
