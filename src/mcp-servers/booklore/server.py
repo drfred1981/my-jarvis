@@ -200,6 +200,28 @@ def update_book_metadata(book_id: str, title: str = "", authors: str = "", serie
 
 
 @mcp.tool()
+def trigger_metadata_refresh(book_id: str) -> str:
+    """Trigger Booklore's native metadata refresh for a book (Goodreads, cover, etc.).
+
+    Sends a REFRESH_METADATA_MANUAL task to the TaskService. Returns task info
+    (taskId, status=ACCEPTED) if successful.
+
+    Args:
+        book_id: Book ID to refresh
+    """
+    payload = {
+        "taskType": "REFRESH_METADATA_MANUAL",
+        "triggeredByCron": False,
+        "options": {
+            "refreshType": "BOOKS",
+            "bookIds": [int(book_id)],
+        },
+    }
+    resp = _request("POST", "/api/v1/tasks/start", json=payload)
+    return json.dumps(resp.json(), indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
 def get_book_download_url(book_id: str) -> str:
     """Get the URL to download the book file (epub/pdf/etc.).
 
