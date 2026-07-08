@@ -17,6 +17,23 @@ INVOCATION_PREFIX = os.getenv("DISCORD_INVOCATION_PREFIX", "/claude")
 # How many recent channel messages to feed as context in multi-user channels.
 HISTORY_LIMIT = int(os.getenv("DISCORD_HISTORY_LIMIT", "15"))
 
+# Where incoming Discord attachments are saved so Jarvis can read/analyze them.
+# Under the claude cwd (/home/jarvis) → reachable by the agent's Read/Bash tools.
+INBOX_DIR = os.getenv("JARVIS_DISCORD_INBOX", "/home/jarvis/discord-inbox")
+# Skip downloading attachments larger than this (Jarvis analyzes files, not blobs).
+MAX_ATTACHMENT_BYTES = int(os.getenv("DISCORD_MAX_ATTACHMENT_MB", "25")) * 1024 * 1024
+
+
+def safe_attachment_name(name: str) -> str:
+    """Reduce an attachment filename to a safe basename (no path traversal).
+
+    Discord filenames are usually benign, but never trust one to build a path:
+    strip any directory part and leading dots, keep a conservative charset.
+    """
+    base = os.path.basename(name or "").strip().lstrip(".")
+    cleaned = "".join(c if (c.isalnum() or c in "._- ") else "_" for c in base)
+    return cleaned.strip() or "file"
+
 
 def parse_invocation(content: str, mentioned: bool) -> tuple[bool, str]:
     """In a multi-user channel, the agent only acts when explicitly invoked.
@@ -84,17 +101,24 @@ class DiscordBot:
                     logger.debug("Multi-user channel, not invoked → reading only")
                     return
 
-            if not content:
+            # Download any attachments so Jarvis can analyze them locally, and note
+            # their paths in the prompt. Done only for messages we actually process.
+            attach_note = await self._download_attachments(message)
+
+            if not content and not attach_note:
                 return
+
+            # Fold the attachment note into the user's message.
+            user_msg = f"{content}\n\n{attach_note}".strip() if attach_note else content
 
             # Persist the mode, then build the prompt (multi-user → recent history).
             self.claude_runner.registry.get_or_create(session_id, mode=mode)
             self.claude_runner.registry.set_mode(session_id, mode)
-            prompt = content
+            prompt = user_msg
             if mode == "multiuser":
                 history = await self._recent_history(message.channel)
                 if history:
-                    prompt = f"{history}\n\n---\n\nMessage adressé à toi :\n{content}"
+                    prompt = f"{history}\n\n---\n\nMessage adressé à toi :\n{user_msg}"
 
             logger.info("Discord → Claude (session=%s, mode=%s)", session_id, mode)
             status_msg = None
@@ -161,6 +185,38 @@ class DiscordBot:
         if self.allowed_channels and message.channel.id in self.allowed_channels:
             return "direct", keys.discord_channel(message.channel.id)
         return "multiuser", keys.discord_channel(message.channel.id)
+
+    async def _download_attachments(self, message) -> str:
+        """Save a message's attachments locally and return a note listing their paths.
+
+        Files land under ``INBOX_DIR/<message_id>/`` (below the agent's cwd) so Jarvis
+        can Read/analyze them. Returns "" when there is nothing to surface. Oversized
+        or failed items are reported in the note rather than silently dropped.
+        """
+        attachments = getattr(message, "attachments", None)
+        if not attachments:
+            return ""
+        base = os.path.join(INBOX_DIR, str(message.id))
+        lines = []
+        for att in attachments:
+            name = safe_attachment_name(att.filename)
+            if att.size and att.size > MAX_ATTACHMENT_BYTES:
+                lines.append(f"- {name} — non récupéré (trop volumineux : "
+                             f"{att.size // (1024 * 1024)} Mo)")
+                continue
+            dest = os.path.join(base, name)
+            try:
+                os.makedirs(base, exist_ok=True)
+                await att.save(dest)
+                meta = f" ({att.content_type})" if getattr(att, "content_type", None) else ""
+                lines.append(f"- `{dest}`{meta}")
+            except Exception as e:
+                logger.warning("Discord attachment save failed (%s): %s", name, e)
+                lines.append(f"- {name} — échec du téléchargement ({e})")
+        if not lines:
+            return ""
+        return ("Pièces jointes reçues, enregistrées localement (lis-les avec ton outil "
+                "`Read` / analyse-les si pertinent) :\n" + "\n".join(lines))
 
     async def _recent_history(self, channel, limit: int = HISTORY_LIMIT) -> str:
         """Recent channel messages as a context preamble (multi-user channels)."""
