@@ -27,7 +27,7 @@ from claude_runner import ClaudeRunner
 from channels.discord_bot import DiscordBot
 from channels.web_socket import ConnectionManager
 from conversations import channel_config, keys
-from docmost_archiver import DocmostArchiver
+from trilium_archiver import TriliumArchiver
 from metrics import (
     MESSAGES_TOTAL,
     MESSAGE_DURATION_SECONDS,
@@ -53,7 +53,7 @@ app = FastAPI(title="Jarvis", version="0.1.0")
 claude = ClaudeRunner()
 ws_manager = ConnectionManager()
 notifier = Notifier()
-archiver = DocmostArchiver()
+archiver = TriliumArchiver()
 monitor = Monitor(claude_runner=claude, notifier=notifier, archiver=archiver)
 introspector = Introspector(claude_runner=claude, notifier=notifier, registry=claude.registry)
 discord_bot: DiscordBot | None = None
@@ -285,9 +285,9 @@ async def _memory_gauge_loop() -> None:
         await asyncio.sleep(300)
 
 
-async def _docmost_sync_loop() -> None:
-    """Sync memory and skills to Docmost every DOCMOST_SYNC_INTERVAL seconds."""
-    from docmost_archiver import SYNC_INTERVAL
+async def _trilium_sync_loop() -> None:
+    """Sync memory and skills to Trilium every TRILIUM_SYNC_INTERVAL seconds."""
+    from trilium_archiver import SYNC_INTERVAL
     if not archiver.enabled:
         return
     while True:
@@ -295,11 +295,11 @@ async def _docmost_sync_loop() -> None:
         try:
             await asyncio.to_thread(archiver.sync_memory, _MEMORY_DIR)
         except Exception as e:
-            logger.debug("docmost sync_memory error: %s", e)
+            logger.debug("trilium sync_memory error: %s", e)
         try:
             await asyncio.to_thread(archiver.sync_skills, _SKILLS_DIR)
         except Exception as e:
-            logger.debug("docmost sync_skills error: %s", e)
+            logger.debug("trilium sync_skills error: %s", e)
 
 
 def _preclone_git_repos():
@@ -409,9 +409,9 @@ async def startup():
     # Inject archiver into claude runner for conversation archiving
     claude.set_archiver(archiver)
     if archiver.enabled:
-        logger.info("Docmost archiver: enabled")
+        logger.info("Trilium archiver: enabled")
     else:
-        logger.info("Docmost archiver: disabled (DOCMOST_URL or credentials not set)")
+        logger.info("Trilium archiver: disabled (TRILIUM_URL or TRILIUM_ETAPI_TOKEN not set)")
 
     # Channels - Discord
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
@@ -456,8 +456,8 @@ async def startup():
         logger.debug("initial memory gauge update failed: %s", e)
     asyncio.create_task(_memory_gauge_loop())
 
-    # Docmost sync loop (memory + skills), if archiver is configured.
-    asyncio.create_task(_docmost_sync_loop())
+    # Trilium sync loop (memory + skills), if archiver is configured.
+    asyncio.create_task(_trilium_sync_loop())
 
     logger.info("Jarvis dispatcher ready")
 
