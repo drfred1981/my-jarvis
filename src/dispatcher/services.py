@@ -31,6 +31,7 @@ SERVICE_REQUIREMENTS = {
     "lubelog": {"type": "env", "vars": ["LUBELOG_URL", "LUBELOG_API_KEY"]},
     "gatus": {"type": "env", "vars": ["GATUS_URL"]},
     "docmost": {"type": "env", "vars": ["DOCMOST_URL"]},
+    "trilium": {"type": "env", "vars": ["TRILIUM_URL", "TRILIUM_ETAPI_TOKEN"]},
     "mind": {"type": "env", "vars": ["MIND_URL", "MIND_USER", "MIND_PASSWORD"]},
     "alertmanager": {"type": "env", "vars": ["ALERTMANAGER_URL"]},
     "booklore": {"type": "env", "vars": ["BOOKLORE_URL", "BOOKLORE_USER", "BOOKLORE_PASSWORD"]},
