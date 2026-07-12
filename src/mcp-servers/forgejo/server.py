@@ -1,20 +1,24 @@
-"""MCP Server for Forgejo (Gitea-compatible Git forge).
+"""MCP Server for Forgejo (self-hosted Git).
 
-Provides tools to interact with Forgejo via its REST API v1:
-- List/search repositories
-- Manage issues and pull requests
-- Browse branches, commits and file contents
-- Create issues and comments
+Provides tools to interact with Forgejo (Gitea-compatible) via its REST API:
+- Search and browse repositories
+- List/create issues and pull requests
+- Comment on issues/PRs
+- Browse branches, releases, and file content
+- Get current user info
 
 Requires env vars:
   FORGEJO_URL=http://forgejo.forgejo.svc.cluster.local:3000
   FORGEJO_TOKEN=<personal-access-token>
+
+Optional:
+  FORGEJO_USER=<username>  (for basic auth instead of token)
+  FORGEJO_PASSWORD=<pass>
 """
 
 import json
 import logging
 import os
-from base64 import b64decode
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -25,315 +29,263 @@ mcp = FastMCP("forgejo")
 
 FORGEJO_URL = os.getenv("FORGEJO_URL", "").rstrip("/")
 FORGEJO_TOKEN = os.getenv("FORGEJO_TOKEN", "")
+FORGEJO_USER = os.getenv("FORGEJO_USER", "")
+FORGEJO_PASSWORD = os.getenv("FORGEJO_PASSWORD", "")
 
 
 def _client() -> httpx.Client:
-    headers = {"Authorization": f"token {FORGEJO_TOKEN}", "Content-Type": "application/json"}
-    return httpx.Client(base_url=f"{FORGEJO_URL}/api/v1", headers=headers, timeout=30)
+    headers = {}
+    auth = None
+    if FORGEJO_TOKEN:
+        headers["Authorization"] = f"token {FORGEJO_TOKEN}"
+    elif FORGEJO_USER:
+        auth = (FORGEJO_USER, FORGEJO_PASSWORD)
+    return httpx.Client(base_url=FORGEJO_URL + "/api/v1", headers=headers, auth=auth, timeout=30)
 
 
 @mcp.tool()
-def get_authenticated_user() -> str:
-    """Get information about the authenticated user."""
+def get_current_user() -> str:
+    """Get current authenticated user info."""
     with _client() as c:
-        resp = c.get("/user")
-        resp.raise_for_status()
-    return json.dumps(resp.json(), indent=2)
+        r = c.get("/user")
+        r.raise_for_status()
+    return json.dumps(r.json(), indent=2)
 
 
 @mcp.tool()
-def list_repos(limit: int = 50, page: int = 1) -> str:
-    """List repositories accessible to the authenticated user.
+def search_repos(query: str = "", limit: int = 20, topic: bool = False) -> str:
+    """Search repositories.
 
     Args:
-        limit: Max results per page (default 50)
-        page: Page number (default 1)
+        query: Search string (empty = list all accessible repos)
+        limit: Max results (default 20)
+        topic: Search in topics (default False)
     """
     with _client() as c:
-        resp = c.get("/repos/search", params={"limit": limit, "page": page, "sort": "updated"})
-        resp.raise_for_status()
-        data = resp.json()
-
+        r = c.get("/repos/search", params={"q": query, "limit": limit, "topic": topic})
+        r.raise_for_status()
+        data = r.json()
     repos = [
         {
-            "full_name": r["full_name"],
-            "description": r.get("description", ""),
-            "default_branch": r.get("default_branch", "main"),
-            "private": r.get("private", False),
-            "open_issues": r.get("open_issues_count", 0),
-            "stars": r.get("stars_count", 0),
-            "updated": r.get("updated", ""),
-            "clone_url": r.get("clone_url", ""),
-            "html_url": r.get("html_url", ""),
+            "full_name": repo["full_name"],
+            "description": repo.get("description", ""),
+            "stars": repo.get("stars_count", 0),
+            "open_issues": repo.get("open_issues_count", 0),
+            "default_branch": repo.get("default_branch", ""),
+            "updated": repo.get("updated", ""),
+            "clone_url": repo.get("clone_url", ""),
         }
-        for r in data.get("data", [])
+        for repo in data.get("data", [])
     ]
     return json.dumps({"total": data.get("ok", len(repos)), "repos": repos}, indent=2)
 
 
 @mcp.tool()
 def get_repo(owner: str, repo: str) -> str:
-    """Get detailed information about a repository.
+    """Get repository details.
 
     Args:
         owner: Repository owner (user or org)
         repo: Repository name
     """
     with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}")
-        resp.raise_for_status()
-    r = resp.json()
+        r = c.get(f"/repos/{owner}/{repo}")
+        r.raise_for_status()
+        data = r.json()
     return json.dumps({
-        "full_name": r["full_name"],
-        "description": r.get("description", ""),
-        "default_branch": r.get("default_branch", "main"),
-        "private": r.get("private", False),
-        "open_issues": r.get("open_issues_count", 0),
-        "stars": r.get("stars_count", 0),
-        "forks": r.get("forks_count", 0),
-        "updated": r.get("updated", ""),
-        "html_url": r.get("html_url", ""),
-        "clone_url": r.get("clone_url", ""),
-        "ssh_url": r.get("ssh_url", ""),
+        "full_name": data["full_name"],
+        "description": data.get("description", ""),
+        "default_branch": data.get("default_branch", ""),
+        "stars": data.get("stars_count", 0),
+        "forks": data.get("forks_count", 0),
+        "open_issues": data.get("open_issues_count", 0),
+        "topics": data.get("topics", []),
+        "clone_url": data.get("clone_url", ""),
+        "updated": data.get("updated", ""),
     }, indent=2)
 
 
 @mcp.tool()
-def list_branches(owner: str, repo: str) -> str:
-    """List branches of a repository.
+def list_issues(owner: str, repo: str, state: str = "open", issue_type: str = "issues", limit: int = 20) -> str:
+    """List issues or pull requests for a repository.
 
     Args:
         owner: Repository owner
         repo: Repository name
-    """
-    with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}/branches", params={"limit": 50})
-        resp.raise_for_status()
-    branches = [
-        {
-            "name": b["name"],
-            "protected": b.get("protected", False),
-            "commit_sha": b.get("commit", {}).get("id", ""),
-            "commit_message": b.get("commit", {}).get("message", "").split("\n")[0],
-        }
-        for b in resp.json()
-    ]
-    return json.dumps({"count": len(branches), "branches": branches}, indent=2)
-
-
-@mcp.tool()
-def list_commits(owner: str, repo: str, branch: str = "", limit: int = 20) -> str:
-    """List recent commits on a branch.
-
-    Args:
-        owner: Repository owner
-        repo: Repository name
-        branch: Branch name (default: repo default branch)
-        limit: Max commits to return (default 20)
-    """
-    params = {"limit": limit}
-    if branch:
-        params["sha"] = branch
-    with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}/commits", params=params)
-        resp.raise_for_status()
-    commits = [
-        {
-            "sha": c_["sha"][:8],
-            "message": c_.get("commit", {}).get("message", "").split("\n")[0],
-            "author": c_.get("commit", {}).get("author", {}).get("name", ""),
-            "date": c_.get("commit", {}).get("author", {}).get("date", ""),
-            "html_url": c_.get("html_url", ""),
-        }
-        for c_ in resp.json()
-    ]
-    return json.dumps({"count": len(commits), "commits": commits}, indent=2)
-
-
-@mcp.tool()
-def get_file(owner: str, repo: str, filepath: str, ref: str = "") -> str:
-    """Get file content from a repository.
-
-    Args:
-        owner: Repository owner
-        repo: Repository name
-        filepath: Path to file (e.g. src/main.py)
-        ref: Branch, tag or commit SHA (default: default branch)
-    """
-    params = {}
-    if ref:
-        params["ref"] = ref
-    with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}/contents/{filepath}", params=params)
-        resp.raise_for_status()
-    data = resp.json()
-    content_b64 = data.get("content", "")
-    content = b64decode(content_b64).decode("utf-8", errors="replace") if content_b64 else ""
-    return json.dumps({
-        "name": data.get("name", ""),
-        "path": data.get("path", ""),
-        "sha": data.get("sha", ""),
-        "size": data.get("size", 0),
-        "encoding": data.get("encoding", ""),
-        "content": content,
-    }, indent=2)
-
-
-@mcp.tool()
-def list_issues(owner: str, repo: str, state: str = "open", limit: int = 20) -> str:
-    """List issues in a repository.
-
-    Args:
-        owner: Repository owner
-        repo: Repository name
-        state: "open", "closed" or "all" (default: open)
+        state: "open", "closed", or "all" (default: open)
+        issue_type: "issues" or "pulls" (default: issues)
         limit: Max results (default 20)
     """
     with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}/issues", params={
-            "state": state, "type": "issues", "limit": limit
-        })
-        resp.raise_for_status()
-    issues = [
-        {
-            "number": i["number"],
-            "title": i["title"],
-            "state": i["state"],
-            "author": i.get("user", {}).get("login", ""),
-            "labels": [lb["name"] for lb in i.get("labels", [])],
-            "created": i.get("created_at", ""),
-            "updated": i.get("updated_at", ""),
-            "html_url": i.get("html_url", ""),
-        }
-        for i in resp.json()
-    ]
-    return json.dumps({"count": len(issues), "state": state, "issues": issues}, indent=2)
+        r = c.get(f"/repos/{owner}/{repo}/issues", params={"state": state, "type": issue_type, "limit": limit})
+        r.raise_for_status()
+        issues = r.json()
+    return json.dumps([{
+        "number": i["number"],
+        "title": i["title"],
+        "state": i["state"],
+        "user": i["user"]["login"],
+        "labels": [lb["name"] for lb in i.get("labels", [])],
+        "comments": i.get("comments", 0),
+        "created": i.get("created_at", ""),
+        "updated": i.get("updated_at", ""),
+        "url": i.get("html_url", ""),
+    } for i in issues], indent=2)
 
 
 @mcp.tool()
-def create_issue(owner: str, repo: str, title: str, body: str = "", labels: list = None) -> str:
-    """Create a new issue in a repository.
+def get_issue(owner: str, repo: str, index: int) -> str:
+    """Get a specific issue or pull request.
+
+    Args:
+        owner: Repository owner
+        repo: Repository name
+        index: Issue/PR number
+    """
+    with _client() as c:
+        r = c.get(f"/repos/{owner}/{repo}/issues/{index}")
+        r.raise_for_status()
+        i = r.json()
+    return json.dumps({
+        "number": i["number"],
+        "title": i["title"],
+        "body": i.get("body", ""),
+        "state": i["state"],
+        "user": i["user"]["login"],
+        "labels": [lb["name"] for lb in i.get("labels", [])],
+        "comments": i.get("comments", 0),
+        "created": i.get("created_at", ""),
+        "updated": i.get("updated_at", ""),
+        "url": i.get("html_url", ""),
+    }, indent=2)
+
+
+@mcp.tool()
+def create_issue(owner: str, repo: str, title: str, body: str = "", labels: list[str] | None = None) -> str:
+    """Create a new issue.
 
     Args:
         owner: Repository owner
         repo: Repository name
         title: Issue title
-        body: Issue body (Markdown)
-        labels: List of label names
+        body: Issue body (markdown)
+        labels: List of label names to apply
     """
-    payload = {"title": title, "body": body}
+    payload: dict = {"title": title, "body": body}
     if labels:
         payload["labels"] = labels
     with _client() as c:
-        resp = c.post(f"/repos/{owner}/{repo}/issues", json=payload)
-        resp.raise_for_status()
-    i = resp.json()
-    return json.dumps({
-        "number": i["number"],
-        "title": i["title"],
-        "html_url": i.get("html_url", ""),
-    }, indent=2)
+        r = c.post(f"/repos/{owner}/{repo}/issues", json=payload)
+        r.raise_for_status()
+        i = r.json()
+    return json.dumps({"number": i["number"], "url": i.get("html_url", ""), "state": i["state"]}, indent=2)
 
 
 @mcp.tool()
-def list_pull_requests(owner: str, repo: str, state: str = "open", limit: int = 20) -> str:
-    """List pull requests in a repository.
-
-    Args:
-        owner: Repository owner
-        repo: Repository name
-        state: "open", "closed" or "all" (default: open)
-        limit: Max results (default 20)
-    """
-    with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}/pulls", params={"state": state, "limit": limit})
-        resp.raise_for_status()
-    prs = [
-        {
-            "number": pr["number"],
-            "title": pr["title"],
-            "state": pr["state"],
-            "author": pr.get("user", {}).get("login", ""),
-            "head": pr.get("head", {}).get("label", ""),
-            "base": pr.get("base", {}).get("label", ""),
-            "mergeable": pr.get("mergeable", None),
-            "created": pr.get("created_at", ""),
-            "updated": pr.get("updated_at", ""),
-            "html_url": pr.get("html_url", ""),
-        }
-        for pr in resp.json()
-    ]
-    return json.dumps({"count": len(prs), "state": state, "pull_requests": prs}, indent=2)
-
-
-@mcp.tool()
-def get_pull_request(owner: str, repo: str, index: int) -> str:
-    """Get detailed information about a pull request.
-
-    Args:
-        owner: Repository owner
-        repo: Repository name
-        index: PR number
-    """
-    with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}/pulls/{index}")
-        resp.raise_for_status()
-    pr = resp.json()
-    return json.dumps({
-        "number": pr["number"],
-        "title": pr["title"],
-        "body": pr.get("body", ""),
-        "state": pr["state"],
-        "author": pr.get("user", {}).get("login", ""),
-        "head": pr.get("head", {}).get("label", ""),
-        "base": pr.get("base", {}).get("label", ""),
-        "mergeable": pr.get("mergeable", None),
-        "merged": pr.get("merged", False),
-        "created": pr.get("created_at", ""),
-        "updated": pr.get("updated_at", ""),
-        "html_url": pr.get("html_url", ""),
-    }, indent=2)
-
-
-@mcp.tool()
-def add_issue_comment(owner: str, repo: str, index: int, body: str) -> str:
+def create_comment(owner: str, repo: str, index: int, body: str) -> str:
     """Add a comment to an issue or pull request.
 
     Args:
         owner: Repository owner
         repo: Repository name
-        index: Issue or PR number
-        body: Comment body (Markdown)
+        index: Issue/PR number
+        body: Comment text (markdown)
     """
     with _client() as c:
-        resp = c.post(f"/repos/{owner}/{repo}/issues/{index}/comments", json={"body": body})
-        resp.raise_for_status()
-    c_ = resp.json()
-    return json.dumps({"id": c_["id"], "html_url": c_.get("html_url", "")}, indent=2)
+        r = c.post(f"/repos/{owner}/{repo}/issues/{index}/comments", json={"body": body})
+        r.raise_for_status()
+        c_ = r.json()
+    return json.dumps({"id": c_["id"], "created": c_.get("created_at", "")}, indent=2)
 
 
 @mcp.tool()
-def list_webhooks(owner: str, repo: str) -> str:
-    """List webhooks configured on a repository.
+def list_prs(owner: str, repo: str, state: str = "open", limit: int = 20) -> str:
+    """List pull requests for a repository.
+
+    Args:
+        owner: Repository owner
+        repo: Repository name
+        state: "open", "closed", or "all" (default: open)
+        limit: Max results (default 20)
+    """
+    with _client() as c:
+        r = c.get(f"/repos/{owner}/{repo}/pulls", params={"state": state, "limit": limit})
+        r.raise_for_status()
+        prs = r.json()
+    return json.dumps([{
+        "number": pr["number"],
+        "title": pr["title"],
+        "state": pr["state"],
+        "user": pr["user"]["login"],
+        "head": pr["head"]["label"],
+        "base": pr["base"]["label"],
+        "mergeable": pr.get("mergeable", None),
+        "created": pr.get("created_at", ""),
+        "updated": pr.get("updated_at", ""),
+        "url": pr.get("html_url", ""),
+    } for pr in prs], indent=2)
+
+
+@mcp.tool()
+def list_branches(owner: str, repo: str) -> str:
+    """List branches for a repository.
 
     Args:
         owner: Repository owner
         repo: Repository name
     """
     with _client() as c:
-        resp = c.get(f"/repos/{owner}/{repo}/hooks")
-        resp.raise_for_status()
-    hooks = [
-        {
-            "id": h["id"],
-            "type": h.get("type", ""),
-            "url": h.get("config", {}).get("url", ""),
-            "events": h.get("events", []),
-            "active": h.get("active", False),
-        }
-        for h in resp.json()
-    ]
-    return json.dumps({"count": len(hooks), "webhooks": hooks}, indent=2)
+        r = c.get(f"/repos/{owner}/{repo}/branches")
+        r.raise_for_status()
+        branches = r.json()
+    return json.dumps([{
+        "name": b["name"],
+        "protected": b.get("protected", False),
+        "commit_sha": b["commit"]["id"][:8] if b.get("commit") else "",
+        "commit_date": b["commit"].get("created", "") if b.get("commit") else "",
+    } for b in branches], indent=2)
+
+
+@mcp.tool()
+def list_releases(owner: str, repo: str, limit: int = 10) -> str:
+    """List releases for a repository.
+
+    Args:
+        owner: Repository owner
+        repo: Repository name
+        limit: Max results (default 10)
+    """
+    with _client() as c:
+        r = c.get(f"/repos/{owner}/{repo}/releases", params={"limit": limit})
+        r.raise_for_status()
+        releases = r.json()
+    return json.dumps([{
+        "tag": rel["tag_name"],
+        "name": rel["name"],
+        "draft": rel.get("draft", False),
+        "prerelease": rel.get("prerelease", False),
+        "published": rel.get("published_at", ""),
+        "url": rel.get("html_url", ""),
+    } for rel in releases], indent=2)
+
+
+@mcp.tool()
+def get_file_content(owner: str, repo: str, path: str, ref: str = "") -> str:
+    """Get file content from a repository.
+
+    Args:
+        owner: Repository owner
+        repo: Repository name
+        path: File path relative to repo root
+        ref: Branch/tag/commit (default: default branch)
+    """
+    params = {}
+    if ref:
+        params["ref"] = ref
+    with _client() as c:
+        r = c.get(f"/repos/{owner}/{repo}/raw/{path}", params=params)
+        r.raise_for_status()
+    return json.dumps({"path": path, "ref": ref or "default", "content": r.text}, indent=2)
 
 
 if __name__ == "__main__":
