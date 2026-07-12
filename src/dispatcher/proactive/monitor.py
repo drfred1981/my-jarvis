@@ -148,16 +148,15 @@ DEFAULT_CHECKS = [
             "Sauvegarde ton récap dans `memory:save_context('digest/last', <ton récap>)` "
             "et dans `memory:save_context('digest/" + datetime.now().strftime("%Y-%m-%d") + "', <ton récap>)` "
             "à la fin (utilise la date du jour réelle au moment où tu écris, pas celle-ci).\n\n"
-            "Archive aussi ce récap dans Docmost :\n"
-            "1. `docmost:list_spaces` → note l'ID de l'espace 'General'.\n"
-            "2. `docmost:list_pages(space_id)` → cherche une page racine 'Journal de bord' ;\n"
-            "   si absente, crée-la : `docmost:create_page(space_id=..., "
-            "title='Journal de bord', content='Journal des digests quotidiens Jarvis.')`.\n"
-            "3. Crée la page du jour : `docmost:create_page(space_id=..., "
-            "parent_page_id=<id Journal de bord>, "
-            "title='Digest <date du jour YYYY-MM-DD>', content=<récap en markdown>)`."
+            "Archive aussi ce récap dans Trilium :\n"
+            "1. `trilium:search_notes('note.title=\'Digests\'', ancestor_note_id='root', fast_search=True)` → cherche la note 'Digests'.\n"
+            "2. Si absente : `trilium:search_notes('note.title=\'Jarvis\'', fast_search=True)` → récupère l'ID Jarvis, "
+            "puis `trilium:create_note(parent_note_id=<jarvis_id>, title='Digests', content='')`.\n"
+            "3. Crée la note du jour : `trilium:create_note(parent_note_id=<digests_id>, "
+            "title='Digest <date YYYY-MM-DD>', content=<récap en HTML>, "
+            "note_type='text', content_type='text/html')`."
         ),
-        required_services=["memory", "git", "docmost"],
+        required_services=["memory", "git", "trilium"],
     ),
 ]
 
@@ -236,7 +235,7 @@ class Monitor:
         return hashlib.md5(normalized.encode()).hexdigest()
 
     def _archive_result(self, check_name: str, response: str) -> None:
-        """Fire-and-forget archiving of a monitor check result to Docmost."""
+        """Fire-and-forget archiving of a monitor check result to Trilium."""
         if self._archiver:
             import asyncio as _asyncio
             _asyncio.create_task(

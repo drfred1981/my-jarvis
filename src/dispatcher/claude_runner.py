@@ -89,7 +89,7 @@ class ClaudeRunner:
         ACTIVE_SESSIONS.set(self.registry.count())
 
     def set_archiver(self, archiver) -> None:
-        """Inject a DocmostArchiver for automatic conversation archiving."""
+        """Inject a TriliumArchiver for automatic conversation archiving."""
         self._archiver = archiver
 
     def add_activity_listener(self, callback) -> None:
@@ -212,7 +212,7 @@ class ClaudeRunner:
 
             response = self._parse_claude_output(output, stderr_text)
 
-            # Archive user-initiated turns to Docmost (fire-and-forget in thread).
+            # Archive user-initiated turns to Trilium (fire-and-forget in thread).
             if self._archiver and is_user_initiated and keys.is_user(conversation_key):
                 asyncio.create_task(
                     asyncio.to_thread(
