@@ -89,7 +89,7 @@ class ClaudeRunner:
         ACTIVE_SESSIONS.set(self.registry.count())
 
     def set_archiver(self, archiver) -> None:
-        """Inject a DocmostArchiver for automatic conversation archiving."""
+        """Inject a TriliumArchiver for automatic conversation archiving."""
         self._archiver = archiver
 
     def add_activity_listener(self, callback) -> None:
