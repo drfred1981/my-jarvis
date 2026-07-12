@@ -15,6 +15,26 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
   les analyse. Noms de fichiers assainis (anti-traversal), items >25 Mo signalés et non
   téléchargés, messages sans texte mais avec pièce jointe désormais traités. Le bot
   requiert la permission Discord **Attach Files**. Doc : `discord-write/README.md`, CLAUDE.md.
+- **Capacités BMAD prises en compte dans les conversations Discord (catalogue injecté
+  + corps chargeables à la demande).** Jarvis connaît désormais, dans chaque conversation
+  utilisateur/introspection, la liste des workflows BMAD **exécutables** (BMad Method +
+  modules `cis`/`tea`/`bmb` + `bmad-loop`), groupés par module, et peut **charger le corps
+  complet d'une procédure à la demande** via `read_skill("bmad-…")` / `attach_skill`.
+  - Catalogue : nouveau `src/dispatcher/context/bmad.py` (lecture des `_bmad/*/module-help.csv`,
+    bloc compact borné, filtré sur les corps réellement installés → ne propose que des noms
+    résolvables ; repli « sensibilisation » si aucun corps), câblé dans `context/injector.py`
+    sous la même garde que le catalogue de skills (pistes monitoring/système exclues).
+  - Pont de lecture : `mcp-servers/skills/catalog.py` et `dispatcher/context/skills.py`
+    résolvent aussi les corps BMAD (`.claude/skills/bmad-*`) pour `read_skill`/`attach_skill`,
+    **sans** les faire apparaître dans le catalogue de skills natif de Jarvis (BMAD a son
+    propre bloc).
+  - Corps embarqués **au build** de l'image (`RUN npx bmad-method install`, ~18 Mo, 6 modules)
+    plutôt que vendorés dans git ; `_bmad/*/module-help.csv` restent trackés pour le catalogue
+    (`.dockerignore`/`.gitignore` ne laissent passer que les catalogues, pas la config perso).
+  - Limite connue : le module WDS (naming `wds-*` ≠ alias `bmad-wds-*` de son CSV) n'est pas
+    exposé (noms non résolvables), écarté automatiquement.
+  Objectif : traiter les demandes Discord de conduite de projet logiciel (cadrage, PRD,
+  architecture, sprint, review) avec la grille BMAD plutôt qu'en improvisant.
 - **Sensibilisation aux capacités BMAD dans le contexte injecté.** Jarvis connaît
   désormais, dans chaque conversation utilisateur/introspection, le catalogue des
   workflows BMAD installés sous `_bmad/` (BMad Method + modules `wds`/`cis`/`tea`/`bmb`
