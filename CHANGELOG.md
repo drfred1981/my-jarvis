@@ -35,6 +35,17 @@ Toutes les évolutions notables de Jarvis. Format inspiré de [Keep a Changelog]
     exposé (noms non résolvables), écarté automatiquement.
   Objectif : traiter les demandes Discord de conduite de projet logiciel (cadrage, PRD,
   architecture, sprint, review) avec la grille BMAD plutôt qu'en improvisant.
+- **Sensibilisation aux capacités BMAD dans le contexte injecté.** Jarvis connaît
+  désormais, dans chaque conversation utilisateur/introspection, le catalogue des
+  workflows BMAD installés sous `_bmad/` (BMad Method + modules `wds`/`cis`/`tea`/`bmb`
+  + `bmad-loop`) : nom + code menu, groupés par module. Nouveau `src/dispatcher/context/bmad.py`
+  (lecture des `_bmad/*/module-help.csv`, bloc compact borné à 2600 car.), câblé dans
+  `context/injector.py` sous la même garde que le catalogue de skills (pistes
+  monitoring/système exclues). Le Dockerfile embarque les `module-help.csv` dans le seed
+  (`.dockerignore`/`.gitignore` ne laissent passer que les catalogues, pas la config
+  perso ni les corps de skills). Objectif : que les demandes Discord portant sur la
+  conduite d'un projet logiciel (cadrage, PRD, architecture, sprint, review) soient
+  traitées avec la grille BMAD plutôt qu'en improvisant.
 
 ### Fixed
 - **Pod bloqué au démarrage par le nettoyage des locks git (virtiofs/NFS).** L'entrypoint
