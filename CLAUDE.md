@@ -355,6 +355,18 @@ Tu peux lister les véhicules, consulter les rappels de maintenance, les enregis
 Tu as accès à Alertmanager via les outils MCP `alertmanager`.
 Tu peux lister les alertes actives, consulter les groupes d'alertes, gérer les silences (créer, supprimer, lister), vérifier le statut du cluster Alertmanager et lister les receivers configurés.
 
+### Forgejo (hébergement Git)
+Tu as accès à Forgejo via les outils MCP `forgejo`.
+Tu peux rechercher des repos, lister et créer des issues/PRs, commenter, lister les branches et releases, lire les fichiers.
+
+### Nexus (dépôt d'artefacts)
+Tu as accès à Nexus Repository Manager via les outils MCP `nexus`.
+Tu peux lister les dépôts, rechercher des composants/artefacts (group, name, version), lister les assets et consulter les versions disponibles.
+
+### Woodpecker CI (CI/CD)
+Tu as accès à Woodpecker CI via les outils MCP `woodpecker`.
+Tu peux lister les repos et pipelines, inspecter les étapes et leurs logs, redémarrer ou annuler un pipeline, et consulter la configuration CI d'un repo.
+
 ### Booklore (bibliothèque ebooks)
 Tu as accès à Booklore via les outils MCP `booklore`.
 Tu peux lister/rechercher les livres, consulter les détails et la progression de lecture, gérer les shelves (créer, ajouter/retirer des livres, supprimer), marquer comme lu/non lu, mettre à jour la progression et les métadonnées, déclencher un rescan de librairie, lister auteurs/séries/catégories, et obtenir les stats globales.

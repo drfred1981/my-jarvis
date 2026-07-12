@@ -2,95 +2,141 @@
   "mcpServers": {
     "kubernetes": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/kubernetes/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/kubernetes/server.py"
+      ]
     },
     "fluxcd": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/fluxcd/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/fluxcd/server.py"
+      ]
     },
     "homeassistant": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/homeassistant/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/homeassistant/server.py"
+      ]
     },
     "grafana-prometheus": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/grafana-prometheus/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/grafana-prometheus/server.py"
+      ]
     },
     "git": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/git/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/git/server.py"
+      ]
     },
     "git-write": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/git-write/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/git-write/server.py"
+      ]
     },
     "planka": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/planka/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/planka/server.py"
+      ]
     },
     "miniflux": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/miniflux/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/miniflux/server.py"
+      ]
     },
     "immich": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/immich/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/immich/server.py"
+      ]
     },
     "karakeep": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/karakeep/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/karakeep/server.py"
+      ]
     },
     "music-assistant": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/music-assistant/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/music-assistant/server.py"
+      ]
     },
     "synology-router": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/synology-router/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/synology-router/server.py"
+      ]
     },
     "plex": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/plex/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/plex/server.py"
+      ]
     },
     "homebox": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/homebox/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/homebox/server.py"
+      ]
     },
     "lubelog": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/lubelog/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/lubelog/server.py"
+      ]
     },
     "gatus": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/gatus/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/gatus/server.py"
+      ]
     },
     "mind": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/mind/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/mind/server.py"
+      ]
     },
     "docmost": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/docmost/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/docmost/server.py"
+      ]
     },
     "alertmanager": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/alertmanager/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/alertmanager/server.py"
+      ]
     },
     "booklore": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/booklore/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/booklore/server.py"
+      ]
     },
     "memory": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/memory/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/memory/server.py"
+      ]
     },
     "skills": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/skills/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/skills/server.py"
+      ]
     },
     "discord-write": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/discord-write/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/discord-write/server.py"
+      ]
     },
     "kubectl-mcp": {
       "command": "kubectl-mcp-server",
@@ -102,15 +148,21 @@
     },
     "forgejo": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/forgejo/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/forgejo/server.py"
+      ]
     },
     "nexus": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/nexus/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/nexus/server.py"
+      ]
     },
     "woodpecker": {
       "command": "python3",
-      "args": ["/opt/jarvis/app/src/mcp-servers/woodpecker/server.py"]
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/woodpecker/server.py"
+      ]
     }
   }
 }
