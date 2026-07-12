@@ -15,6 +15,8 @@ Uses the Trilium ETAPI to create/update notes. Note structure:
 Note IDs are cached in /home/jarvis/memory/trilium-note-ids.json to avoid
 repeated search calls.
 
+Content is sent as text/x-markdown — Trilium renders it natively.
+
 Required env vars:
   TRILIUM_URL         — Trilium base URL (e.g. http://trilium.trilium.svc.cluster.local:8080)
   TRILIUM_ETAPI_TOKEN — API token from Trilium Options → ETAPI
@@ -44,6 +46,7 @@ ARCHIVE_MONITOR = os.getenv("TRILIUM_ARCHIVE_MONITOR", "true").lower() == "true"
 SYNC_INTERVAL = int(os.getenv("TRILIUM_SYNC_INTERVAL", "3600"))
 
 _NOTE_ID_CACHE_PATH = "/home/jarvis/memory/trilium-note-ids.json"
+_CONTENT_TYPE = "text/x-markdown"
 
 SECTION_CONVERSATIONS = "Conversations"
 SECTION_MONITORING = "Monitoring"
@@ -75,160 +78,6 @@ def _build_channel_names() -> dict[str, str]:
 
 CHANNEL_NAMES: dict[str, str] = _build_channel_names()
 
-
-# ---------------------------------------------------------------------------
-# Markdown → HTML converter
-# ---------------------------------------------------------------------------
-
-_INLINE_RE = re.compile(
-    r"(\*\*|__)(?P<bold>.+?)(\*\*|__)"
-    r"|(\*|_)(?P<italic>.+?)(\*|_)"
-    r"|~~(?P<strike>.+?)~~"
-    r"|`(?P<code>[^`]+?)`"
-    r"|\[(?P<link_text>[^\]]+)\]\((?P<link_href>[^)]+)\)"
-    r"|(?P<text>[^*_~`\[]+)"
-)
-
-
-def _parse_inline(text: str) -> str:
-    result = []
-    for m in _INLINE_RE.finditer(text):
-        if m.group("bold"):
-            result.append(f"<strong>{m.group('bold')}</strong>")
-        elif m.group("italic"):
-            result.append(f"<em>{m.group('italic')}</em>")
-        elif m.group("strike"):
-            result.append(f"<s>{m.group('strike')}</s>")
-        elif m.group("code"):
-            result.append(f"<code>{m.group('code')}</code>")
-        elif m.group("link_text"):
-            href = m.group("link_href")
-            txt = m.group("link_text")
-            result.append(f'<a href="{href}">{txt}</a>')
-        elif m.group("text"):
-            result.append(m.group("text"))
-    return "".join(result)
-
-
-def _md_to_html(text: str) -> str:
-    """Convert markdown to HTML suitable for Trilium text notes."""
-    lines = text.splitlines()
-    html: list[str] = []
-    in_code = False
-    code_lang = ""
-    code_lines: list[str] = []
-    bullet_items: list[str] = []
-    ordered_items: list[str] = []
-    quote_lines: list[str] = []
-
-    def flush_bullet():
-        if bullet_items:
-            html.append("<ul>")
-            for it in bullet_items:
-                html.append(f"<li>{_parse_inline(it)}</li>")
-            html.append("</ul>")
-            bullet_items.clear()
-
-    def flush_ordered():
-        if ordered_items:
-            html.append("<ol>")
-            for it in ordered_items:
-                html.append(f"<li>{_parse_inline(it)}</li>")
-            html.append("</ol>")
-            ordered_items.clear()
-
-    def flush_quote():
-        if quote_lines:
-            inner = _md_to_html("\n".join(quote_lines))
-            html.append(f"<blockquote>{inner}</blockquote>")
-            quote_lines.clear()
-
-    for line in lines:
-        # Code block
-        if line.startswith("```"):
-            if not in_code:
-                flush_bullet(); flush_ordered(); flush_quote()
-                in_code = True
-                code_lang = line[3:].strip()
-                code_lines = []
-            else:
-                in_code = False
-                escaped = "\n".join(
-                    l.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    for l in code_lines
-                )
-                lang_attr = f' class="language-{code_lang}"' if code_lang else ""
-                html.append(f"<pre><code{lang_attr}>{escaped}</code></pre>")
-            continue
-
-        if in_code:
-            code_lines.append(line)
-            continue
-
-        # Blockquote
-        if line.startswith("> "):
-            flush_bullet(); flush_ordered()
-            quote_lines.append(line[2:])
-            continue
-        elif quote_lines and line.startswith(">"):
-            quote_lines.append(line[1:].lstrip())
-            continue
-        else:
-            flush_quote()
-
-        # Bullet list
-        m_ul = re.match(r"^[-*+]\s+(.*)", line)
-        if m_ul:
-            flush_ordered()
-            bullet_items.append(m_ul.group(1))
-            continue
-        else:
-            flush_bullet()
-
-        # Ordered list
-        m_ol = re.match(r"^\d+\.\s+(.*)", line)
-        if m_ol:
-            ordered_items.append(m_ol.group(1))
-            continue
-        else:
-            flush_ordered()
-
-        # Headings
-        m_h = re.match(r"^(#{1,6})\s+(.*)", line)
-        if m_h:
-            level = len(m_h.group(1))
-            html.append(f"<h{level}>{_parse_inline(m_h.group(2))}</h{level}>")
-            continue
-
-        # Horizontal rule
-        if re.match(r"^[-*_]{3,}\s*$", line):
-            html.append("<hr/>")
-            continue
-
-        # Empty line → paragraph break
-        if not line.strip():
-            html.append("<p></p>")
-            continue
-
-        html.append(f"<p>{_parse_inline(line)}</p>")
-
-    # Flush any open lists/quote
-    flush_bullet()
-    flush_ordered()
-    flush_quote()
-    if in_code and code_lines:
-        escaped = "\n".join(
-            l.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            for l in code_lines
-        )
-        html.append(f"<pre><code>{escaped}</code></pre>")
-
-    return "\n".join(html)
-
-
-# ---------------------------------------------------------------------------
-# TriliumArchiver
-# ---------------------------------------------------------------------------
 
 class TriliumArchiver:
     """Archives Jarvis data (conversations, monitoring, memory, skills) to Trilium Notes."""
@@ -282,7 +131,6 @@ class TriliumArchiver:
             cached = self._cache[cache_key]
             if self._note_exists(cached):
                 return cached
-            # Stale cache entry
             del self._cache[cache_key]
 
         try:
@@ -307,7 +155,7 @@ class TriliumArchiver:
                     "title": title,
                     "type": "text",
                     "content": "",
-                    "contentType": "text/html",
+                    "contentType": _CONTENT_TYPE,
                 })
                 r2.raise_for_status()
                 note_id = r2.json()["note"]["noteId"]
@@ -328,26 +176,26 @@ class TriliumArchiver:
             return None
         return self._get_or_create(root, name, cache_key=f"section_{name}")
 
-    def _append(self, note_id: str, html: str) -> None:
+    def _append(self, note_id: str, content: str) -> None:
         try:
             with self._client() as c:
                 r = c.get(f"/notes/{note_id}/content")
                 current = r.text if r.status_code == 200 else ""
                 c.put(
                     f"/notes/{note_id}/content",
-                    content=(current + html).encode("utf-8"),
-                    headers={"Content-Type": "text/html"},
+                    content=(current + content).encode("utf-8"),
+                    headers={"Content-Type": _CONTENT_TYPE},
                 ).raise_for_status()
         except Exception as e:
             logger.debug("trilium append to %s: %s", note_id, e)
 
-    def _replace(self, note_id: str, html: str) -> None:
+    def _replace(self, note_id: str, content: str) -> None:
         try:
             with self._client() as c:
                 c.put(
                     f"/notes/{note_id}/content",
-                    content=html.encode("utf-8"),
-                    headers={"Content-Type": "text/html"},
+                    content=content.encode("utf-8"),
+                    headers={"Content-Type": _CONTENT_TYPE},
                 ).raise_for_status()
         except Exception as e:
             logger.debug("trilium replace %s: %s", note_id, e)
@@ -372,7 +220,6 @@ class TriliumArchiver:
             return
 
         friendly = CHANNEL_NAMES.get(conv_key, conv_key)
-
         channel_id = self._get_or_create(
             section_id, friendly, cache_key=f"conv_channel_{conv_key}"
         )
@@ -386,8 +233,8 @@ class TriliumArchiver:
         if not day_id:
             return
 
-        html = _md_to_html(f"**[{time_str}] {role.upper()}**\n\n{content}\n\n---\n")
-        self._append(day_id, html)
+        md = f"**[{time_str}] {role.upper()}**\n\n{content}\n\n---\n\n"
+        self._append(day_id, md)
 
     def archive_monitor_result(
         self,
@@ -410,8 +257,8 @@ class TriliumArchiver:
         if not check_id:
             return
 
-        html = _md_to_html(f"## {time_str}\n\n{content}\n\n---\n")
-        self._append(check_id, html)
+        md = f"## {time_str}\n\n{content}\n\n---\n\n"
+        self._append(check_id, md)
 
     def sync_memory(self, memory_dir: str) -> None:
         if not self.enabled:
@@ -435,7 +282,7 @@ class TriliumArchiver:
                     cache_key=f"mem_{'_'.join(parts)}"
                 )
                 if leaf_id:
-                    self._replace(leaf_id, _md_to_html(content))
+                    self._replace(leaf_id, content)
             except Exception as e:
                 logger.debug("sync_memory %s: %s", "/".join(parts), e)
 
@@ -454,6 +301,6 @@ class TriliumArchiver:
                     section_id, skill_name, cache_key=f"skill_{skill_name}"
                 )
                 if note_id:
-                    self._replace(note_id, _md_to_html(content))
+                    self._replace(note_id, content)
             except Exception as e:
                 logger.debug("sync_skills %s: %s", skill_name, e)
