@@ -403,6 +403,7 @@ Tu as accès aux outils suivants dans le container :
 - **sops** : chiffrement/déchiffrement de secrets
 - **task** : exécution de Taskfiles
 - **git** : opérations git
+- **gh** : GitHub CLI — créer/commenter des PRs, lister les issues, déclencher des workflows CI
 
 ## Services dans le cluster
 Le cluster contient entre autres :

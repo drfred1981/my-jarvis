@@ -56,6 +56,14 @@ RUN curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSIO
 # --- task (task runner / Taskfile) ---
 RUN sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
+# --- GitHub CLI (gh) ---
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # --- Claude Code (pinned; bump to update. 2.1.181 = stable, 2.1.195 = latest) ---
 ARG CLAUDE_CODE_VERSION=2.1.195
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
