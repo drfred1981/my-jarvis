@@ -142,7 +142,8 @@ class TriliumArchiver:
                     "limit": "5",
                 })
                 if r.status_code == 200:
-                    results = r.json()
+                    data = r.json()
+                    results = data["results"] if isinstance(data, dict) and "results" in data else (data if isinstance(data, list) else [])
                     if results:
                         note_id = results[0]["noteId"]
                         if cache_key:
@@ -155,7 +156,7 @@ class TriliumArchiver:
                     "title": title,
                     "type": "text",
                     "content": "",
-                    "contentType": _CONTENT_TYPE,
+                    "mime": _CONTENT_TYPE,
                 })
                 r2.raise_for_status()
                 note_id = r2.json()["note"]["noteId"]
@@ -184,7 +185,7 @@ class TriliumArchiver:
                 c.put(
                     f"/notes/{note_id}/content",
                     content=(current + content).encode("utf-8"),
-                    headers={"Content-Type": _CONTENT_TYPE},
+                    headers={"Content-Type": "text/plain"},
                 ).raise_for_status()
         except Exception as e:
             logger.debug("trilium append to %s: %s", note_id, e)
@@ -195,7 +196,7 @@ class TriliumArchiver:
                 c.put(
                     f"/notes/{note_id}/content",
                     content=content.encode("utf-8"),
-                    headers={"Content-Type": _CONTENT_TYPE},
+                    headers={"Content-Type": "text/plain"},
                 ).raise_for_status()
         except Exception as e:
             logger.debug("trilium replace %s: %s", note_id, e)
