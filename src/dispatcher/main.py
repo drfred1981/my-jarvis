@@ -39,6 +39,7 @@ from metrics import (
     CONTEXT_FILE_SIZE_BYTES,
 )
 from notifier import Notifier
+from proactive.activity_gate import ActivityGate
 from proactive.introspector import Introspector
 from proactive.monitor import Monitor
 from services import get_available_services, log_service_status
@@ -54,8 +55,9 @@ claude = ClaudeRunner()
 ws_manager = ConnectionManager()
 notifier = Notifier()
 archiver = TriliumArchiver()
-monitor = Monitor(claude_runner=claude, notifier=notifier, archiver=archiver)
-introspector = Introspector(claude_runner=claude, notifier=notifier, registry=claude.registry)
+activity_gate = ActivityGate(registry=claude.registry)
+monitor = Monitor(claude_runner=claude, notifier=notifier, archiver=archiver, gate=activity_gate)
+introspector = Introspector(claude_runner=claude, notifier=notifier, registry=claude.registry, gate=activity_gate)
 discord_bot: DiscordBot | None = None
 
 # Prometheus metrics endpoint

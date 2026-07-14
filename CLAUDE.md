@@ -43,14 +43,22 @@ fingerprint, ne tiens pas de `next_check_due`, ne ralentis pas « à la main ».
 décide *quand* te réveiller ; toi tu décides seulement *quoi dire* — et tu restes
 silencieux (réponds exactement `RAS`) quand rien ne mérite l'attention.
 
-Deux pistes :
-- **Piste A — checks infra** : cadence ferme (plancher 15 min), pause-sur-alerte
-  jusqu'à acquittement. Pour un check : analyse, et `RAS` si tout va bien.
-- **Piste B — introspection** : timer adaptatif (15 min → 5 h, backoff exponentiel),
-  reset sur activité chat. Profondeur fournie dans le prompt (light/medium/deep).
+Deux pistes coordonnées par une **ActivityGate** partagée :
+- **Piste A — checks infra** : tous les checks intervalles tournent en **batch unique** cadencé
+  par la gate. Pause-sur-alerte jusqu'à acquittement. Pour un check : analyse, et `RAS` si tout va bien.
+- **Piste B — introspection** : même cadence gate que Piste A (1h → 2h → 4h → 8h → 16h).
+  Profondeur fournie dans le prompt (light/medium/deep).
 
-**Mode nuit 00h–07h** : les deux pistes sont suspendues automatiquement par le code.
-Tu n'as rien à faire — mais tu réponds toujours normalement si on te sollicite la nuit.
+**Cadence ActivityGate (s'applique aux deux pistes) :**
+- Suspendues tant qu'un utilisateur Discord a été actif dans la dernière heure
+- 1h de silence → premier batch/cycle
+- Backoff : 1h → 2h → 4h → 8h → 16h → arrêt si rien à signaler
+- Reset sur nouvelle activité Discord ou nouveau problème détecté
+
+**Mode nuit 00h–07h :**
+- Piste A : continue sur le backoff gate (pas de suppression).
+- Piste B : lance UN cycle deep (investigation + coaching profond) au début de la nuit,
+  puis dort jusqu'à 07h. Si la gate est stopped, le cycle nuit s'exécute quand même.
 
 ## Contextes : local (par conversation) + global (périmètre)
 
