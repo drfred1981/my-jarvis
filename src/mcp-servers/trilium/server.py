@@ -92,7 +92,7 @@ def create_note(
             "title": title,
             "type": note_type,
             "content": content,
-            "contentType": content_type,
+            "mime": content_type,
         })
         r.raise_for_status()
     return json.dumps(r.json(), indent=2)
@@ -198,7 +198,14 @@ def search_notes(
     with _client() as c:
         r = c.get("/notes", params=params)
         r.raise_for_status()
-        results = r.json()
+        data = r.json()
+
+    if isinstance(data, dict) and "results" in data:
+        results = data["results"]
+    elif isinstance(data, list):
+        results = data
+    else:
+        results = []
 
     return json.dumps({
         "count": len(results),

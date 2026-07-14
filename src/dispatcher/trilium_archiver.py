@@ -15,7 +15,8 @@ Uses the Trilium ETAPI to create/update notes. Note structure:
 Note IDs are cached in /home/jarvis/memory/trilium-note-ids.json to avoid
 repeated search calls.
 
-Content is sent as text/x-markdown — Trilium renders it natively.
+Content is sent as HTML (converted from markdown) for proper rendering in
+Trilium's CKEditor.
 
 Required env vars:
   TRILIUM_URL         — Trilium base URL (e.g. http://trilium.trilium.svc.cluster.local:8080)
@@ -37,6 +38,16 @@ from typing import Optional
 
 import httpx
 
+try:
+    import markdown as _md_lib
+
+    def _md_to_html(text: str) -> str:
+        return _md_lib.markdown(text, extensions=["tables", "fenced_code"])
+except ImportError:
+    def _md_to_html(text: str) -> str:
+        escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return "<pre>" + escaped + "</pre>"
+
 logger = logging.getLogger(__name__)
 
 TRILIUM_URL = os.getenv("TRILIUM_URL", "").rstrip("/")
@@ -46,7 +57,6 @@ ARCHIVE_MONITOR = os.getenv("TRILIUM_ARCHIVE_MONITOR", "true").lower() == "true"
 SYNC_INTERVAL = int(os.getenv("TRILIUM_SYNC_INTERVAL", "3600"))
 
 _NOTE_ID_CACHE_PATH = "/home/jarvis/memory/trilium-note-ids.json"
-_CONTENT_TYPE = "text/x-markdown"
 
 SECTION_CONVERSATIONS = "Conversations"
 SECTION_MONITORING = "Monitoring"
@@ -71,8 +81,8 @@ def _build_channel_names() -> dict[str, str]:
             name = m.group(1)
         else:
             words = re.findall(r"[\w]+", desc.lower())[:2]
-            name = "-".join(words) if words else f"channel-{cid}"
-        result[f"discord:channel:{cid}"] = name
+            name = "-".join(words) if words else "channel-" + cid
+        result["discord:channel:" + cid] = name
     return result
 
 
@@ -110,7 +120,7 @@ class TriliumArchiver:
     def _client(self) -> httpx.Client:
         return httpx.Client(
             base_url=TRILIUM_URL + "/etapi",
-            headers={"Authorization": f"Bearer {TRILIUM_ETAPI_TOKEN}"},
+            headers={"Authorization": "Bearer " + TRILIUM_ETAPI_TOKEN},
             timeout=30,
         )
 
@@ -119,7 +129,7 @@ class TriliumArchiver:
     def _note_exists(self, note_id: str) -> bool:
         try:
             with self._client() as c:
-                return c.get(f"/notes/{note_id}").status_code == 200
+                return c.get("/notes/" + note_id).status_code == 200
         except Exception:
             return False
 
@@ -136,14 +146,19 @@ class TriliumArchiver:
         try:
             with self._client() as c:
                 r = c.get("/notes", params={
-                    "search": f"note.title='{title}'",
+                    "search": "note.title='" + title + "'",
                     "ancestorNoteId": parent_id,
                     "fastSearch": "false",
                     "limit": "5",
                 })
                 if r.status_code == 200:
                     data = r.json()
-                    results = data["results"] if isinstance(data, dict) and "results" in data else (data if isinstance(data, list) else [])
+                    if isinstance(data, dict) and "results" in data:
+                        results = data["results"]
+                    elif isinstance(data, list):
+                        results = data
+                    else:
+                        results = []
                     if results:
                         note_id = results[0]["noteId"]
                         if cache_key:
@@ -156,7 +171,6 @@ class TriliumArchiver:
                     "title": title,
                     "type": "text",
                     "content": "",
-                    "mime": _CONTENT_TYPE,
                 })
                 r2.raise_for_status()
                 note_id = r2.json()["note"]["noteId"]
@@ -175,27 +189,30 @@ class TriliumArchiver:
         root = self._jarvis_root()
         if not root:
             return None
-        return self._get_or_create(root, name, cache_key=f"section_{name}")
+        return self._get_or_create(root, name, cache_key="section_" + name)
 
-    def _append(self, note_id: str, content: str) -> None:
+    def _append(self, note_id: str, md_content: str) -> None:
         try:
+            html_chunk = _md_to_html(md_content)
             with self._client() as c:
-                r = c.get(f"/notes/{note_id}/content")
+                r = c.get("/notes/" + note_id + "/content")
                 current = r.text if r.status_code == 200 else ""
+                updated = current + html_chunk
                 c.put(
-                    f"/notes/{note_id}/content",
-                    content=(current + content).encode("utf-8"),
+                    "/notes/" + note_id + "/content",
+                    content=updated.encode("utf-8"),
                     headers={"Content-Type": "text/plain"},
                 ).raise_for_status()
         except Exception as e:
             logger.debug("trilium append to %s: %s", note_id, e)
 
-    def _replace(self, note_id: str, content: str) -> None:
+    def _replace(self, note_id: str, md_content: str) -> None:
         try:
+            html = _md_to_html(md_content)
             with self._client() as c:
                 c.put(
-                    f"/notes/{note_id}/content",
-                    content=content.encode("utf-8"),
+                    "/notes/" + note_id + "/content",
+                    content=html.encode("utf-8"),
                     headers={"Content-Type": "text/plain"},
                 ).raise_for_status()
         except Exception as e:
@@ -222,19 +239,19 @@ class TriliumArchiver:
 
         friendly = CHANNEL_NAMES.get(conv_key, conv_key)
         channel_id = self._get_or_create(
-            section_id, friendly, cache_key=f"conv_channel_{conv_key}"
+            section_id, friendly, cache_key="conv_channel_" + conv_key
         )
         if not channel_id:
             return
 
-        day_title = f"{date_str} — {friendly}"
+        day_title = date_str + " — " + friendly
         day_id = self._get_or_create(
-            channel_id, day_title, cache_key=f"conv_day_{conv_key}_{date_str}"
+            channel_id, day_title, cache_key="conv_day_" + conv_key + "_" + date_str
         )
         if not day_id:
             return
 
-        md = f"**[{time_str}] {role.upper()}**\n\n{content}\n\n---\n\n"
+        md = "**[" + time_str + "] " + role.upper() + "**\n\n" + content + "\n\n---\n\n"
         self._append(day_id, md)
 
     def archive_monitor_result(
@@ -253,12 +270,12 @@ class TriliumArchiver:
             return
 
         check_id = self._get_or_create(
-            section_id, check_name, cache_key=f"monitor_{check_name}"
+            section_id, check_name, cache_key="monitor_" + check_name
         )
         if not check_id:
             return
 
-        md = f"## {time_str}\n\n{content}\n\n---\n\n"
+        md = "## " + time_str + "\n\n" + content + "\n\n---\n\n"
         self._append(check_id, md)
 
     def sync_memory(self, memory_dir: str) -> None:
@@ -276,11 +293,11 @@ class TriliumArchiver:
                 parent_id = section_id
                 for part in parts[:-1]:
                     parent_id = self._get_or_create(
-                        parent_id, part, cache_key=f"mem_dir_{part}"
+                        parent_id, part, cache_key="mem_dir_" + part
                     ) or section_id
+                cache_key = "mem_" + "_".join(parts)
                 leaf_id = self._get_or_create(
-                    parent_id, parts[-1],
-                    cache_key=f"mem_{'_'.join(parts)}"
+                    parent_id, parts[-1], cache_key=cache_key
                 )
                 if leaf_id:
                     self._replace(leaf_id, content)
@@ -299,7 +316,7 @@ class TriliumArchiver:
             try:
                 content = path.read_text(encoding="utf-8")
                 note_id = self._get_or_create(
-                    section_id, skill_name, cache_key=f"skill_{skill_name}"
+                    section_id, skill_name, cache_key="skill_" + skill_name
                 )
                 if note_id:
                     self._replace(note_id, content)
