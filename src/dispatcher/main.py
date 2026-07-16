@@ -213,8 +213,9 @@ async def synology_webhook(payload: dict):
     user_id = str(payload.get("user_id", "synology"))
     conv_key = keys.synology(user_id)
 
+    syno_username = payload.get("username") or None
     with MESSAGE_DURATION_SECONDS.labels(channel="synology").time():
-        response = await claude.send_message(conv_key, text, is_user_initiated=True)
+        response = await claude.send_message(conv_key, text, is_user_initiated=True, username=syno_username)
     MESSAGES_TOTAL.labels(channel="synology", status="success").inc()
 
     # Synology Chat expects: {"text": "response"}
