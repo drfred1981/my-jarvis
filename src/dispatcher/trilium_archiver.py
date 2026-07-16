@@ -223,15 +223,19 @@ class TriliumArchiver:
     def archive_conversation_turn(
         self,
         conv_key: str,
-        role: str,
-        content: str,
+        user_msg: str,
+        response: str,
         ts: Optional[datetime] = None,
+        username: Optional[str] = None,
     ) -> None:
         if not self.enabled or not ARCHIVE_CONV:
             return
         ts = ts or datetime.now(timezone.utc)
+        ts_resp = datetime.now(timezone.utc)
         date_str = ts.strftime("%Y-%m-%d")
-        time_str = ts.strftime("%H:%M:%S")
+        time_u = ts.strftime("%H:%M:%S")
+        time_r = ts_resp.strftime("%H:%M:%S")
+        user_label = ("@" + username) if username else "Utilisateur"
 
         section_id = self._section(SECTION_CONVERSATIONS)
         if not section_id:
@@ -251,7 +255,12 @@ class TriliumArchiver:
         if not day_id:
             return
 
-        md = "**[" + time_str + "] " + role.upper() + "**\n\n" + content + "\n\n---\n\n"
+        md = (
+            "**[" + time_u + "] " + user_label + "**\n\n"
+            + user_msg + "\n\n"
+            + "**[" + time_r + "] Jarvis**\n\n"
+            + response + "\n\n---\n\n"
+        )
         self._append(day_id, md)
 
     def archive_monitor_result(

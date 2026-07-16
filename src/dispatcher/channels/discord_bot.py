@@ -138,7 +138,8 @@ class DiscordBot:
                 async with message.channel.typing():
                     with MESSAGE_DURATION_SECONDS.labels(channel="discord").time():
                         response = await self.claude_runner.send_message(
-                            session_id, prompt, is_user_initiated=True, heartbeat=heartbeat)
+                            session_id, prompt, is_user_initiated=True, heartbeat=heartbeat,
+                            username=message.author.display_name)
                     logger.info("Claude response (session=%s, len=%d): %s",
                                 session_id, len(response), response[:200])
 

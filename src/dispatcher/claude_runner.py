@@ -118,7 +118,8 @@ class ClaudeRunner:
     async def send_message(self, conversation_key: str, message: str,
                            *, with_context: bool = True,
                            is_user_initiated: bool = False,
-                           heartbeat=None, heartbeat_interval: float = 30) -> str:
+                           heartbeat=None, heartbeat_interval: float = 30,
+                           username: str | None = None) -> str:
         """Send a message to Claude Code and return the response."""
         logger.info("Processing message for %s: %s", conversation_key, message[:100])
 
@@ -217,7 +218,7 @@ class ClaudeRunner:
                 asyncio.create_task(
                     asyncio.to_thread(
                         self._archiver.archive_conversation_turn,
-                        conversation_key, message[:500], response[:2000],
+                        conversation_key, message, response, None, username,
                     )
                 )
 
