@@ -1,6 +1,7 @@
 """MCP Server for Mattermost.
 
-Provides tools to read and post to Mattermost channels, threads, and DMs.
+Provides tools to read and post to Mattermost channels, threads, and DMs,
+including file attachment download and upload.
 
 Required env vars:
   MATTERMOST_URL   — Mattermost base URL (e.g. https://mattermost.example.com)
@@ -8,11 +9,15 @@ Required env vars:
 
 Optional:
   MATTERMOST_DEFAULT_TEAM_ID — Default team ID to scope channel searches
+  MATTERMOST_INBOX_DIR       — Local directory for downloaded attachments
+                               (default: /home/jarvis/mattermost-inbox)
 """
 
 import json
 import logging
+import mimetypes
 import os
+import re
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -24,16 +29,16 @@ mcp = FastMCP("mattermost")
 MATTERMOST_URL = os.getenv("MATTERMOST_URL", "").rstrip("/")
 MATTERMOST_TOKEN = os.getenv("MATTERMOST_TOKEN", "")
 MATTERMOST_DEFAULT_TEAM_ID = os.getenv("MATTERMOST_DEFAULT_TEAM_ID", "")
+MATTERMOST_INBOX_DIR = os.getenv("MATTERMOST_INBOX_DIR", "/home/jarvis/mattermost-inbox")
 
 
 def _client() -> httpx.Client:
+    # Do NOT set Content-Type here: let each request set it (json= → application/json,
+    # files= → multipart/form-data with boundary). A fixed default would break uploads.
     return httpx.Client(
         base_url=MATTERMOST_URL + "/api/v4",
-        headers={
-            "Authorization": "Bearer " + MATTERMOST_TOKEN,
-            "Content-Type": "application/json",
-        },
-        timeout=30,
+        headers={"Authorization": "Bearer " + MATTERMOST_TOKEN},
+        timeout=60,
     )
 
 
@@ -247,17 +252,27 @@ def get_post(post_id: str) -> str:
 # ── Posts (write) ─────────────────────────────────────────────────────────────
 
 @mcp.tool()
-def post_message(channel_id: str, message: str, root_id: str = "") -> str:
-    """Post a message to a channel, or reply to a thread.
+def post_message(channel_id: str, message: str, root_id: str = "",
+                 file_ids: str = "") -> str:
+    """Post a message to a channel, or reply to a thread. Optionally attach files.
 
     Args:
         channel_id: Channel ID to post in
         message: Message text (Markdown supported)
         root_id: Root post ID to reply to (empty = new post, not a thread reply)
+        file_ids: Comma-separated file IDs to attach (from upload_file), or JSON array
     """
     body: dict = {"channel_id": channel_id, "message": message}
     if root_id:
         body["root_id"] = root_id
+    if file_ids:
+        # Accept both "id1,id2" and JSON array ["id1","id2"]
+        if file_ids.strip().startswith("["):
+            ids = json.loads(file_ids)
+        else:
+            ids = [fid.strip() for fid in file_ids.split(",") if fid.strip()]
+        if ids:
+            body["file_ids"] = ids
     with _client() as c:
         r = c.post("/posts", json=body)
         r.raise_for_status()
@@ -268,6 +283,7 @@ def post_message(channel_id: str, message: str, root_id: str = "") -> str:
         "root_id": p.get("root_id") or None,
         "create_at": p.get("create_at"),
         "message": p.get("message"),
+        "file_ids": p.get("file_ids") or [],
     }, indent=2)
 
 
@@ -400,7 +416,7 @@ def create_direct_channel(user_id: str) -> str:
     }, indent=2)
 
 
-# ── File info ─────────────────────────────────────────────────────────────────
+# ── Files ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
 def get_file_info(file_id: str) -> str:
@@ -422,6 +438,99 @@ def get_file_info(file_id: str) -> str:
         "has_preview_image": f.get("has_preview_image"),
         "creator_id": f.get("user_id"),
         "create_at": f.get("create_at"),
+    }, indent=2)
+
+
+@mcp.tool()
+def download_file(file_id: str, dest_dir: str = "") -> str:
+    """Download a Mattermost file attachment to local disk.
+
+    Saves to MATTERMOST_INBOX_DIR/<file_id>/<filename> by default.
+    Use get_file_info first to know the original filename / size.
+
+    Args:
+        file_id: File ID (from a post's file_ids list)
+        dest_dir: Override destination directory (empty = use MATTERMOST_INBOX_DIR/<file_id>)
+    """
+    # Determine destination directory
+    if dest_dir:
+        out_dir = dest_dir
+    else:
+        out_dir = os.path.join(MATTERMOST_INBOX_DIR, file_id)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # First, fetch metadata to get the original filename
+    with _client() as c:
+        info_r = c.get(f"/files/{file_id}/info")
+        info_r.raise_for_status()
+        info = info_r.json()
+        filename = info.get("name") or file_id
+
+        # Download the actual file (streaming)
+        dl_r = c.get(f"/files/{file_id}")
+        dl_r.raise_for_status()
+
+        # Try to get filename from Content-Disposition if metadata didn't have one
+        cd = dl_r.headers.get("Content-Disposition", "")
+        if cd:
+            m = re.search(r'filename[^;=\n]*=(?:["\']?)([^"\'\n;]+)', cd)
+            if m:
+                filename = m.group(1).strip()
+
+        file_path = os.path.join(out_dir, filename)
+        with open(file_path, "wb") as fh:
+            fh.write(dl_r.content)
+
+    size = os.path.getsize(file_path)
+    return json.dumps({
+        "file_id": file_id,
+        "local_path": file_path,
+        "filename": filename,
+        "size": size,
+        "mime_type": info.get("mime_type"),
+    }, indent=2)
+
+
+@mcp.tool()
+def upload_file(channel_id: str, file_path: str) -> str:
+    """Upload a local file to Mattermost and return its file_id.
+
+    Use the returned file_id in post_message(file_ids=...) to attach it to a post.
+    The file must be accessible on the local filesystem.
+
+    Args:
+        channel_id: Target channel ID (required by Mattermost even before the post)
+        file_path: Absolute path to the local file to upload
+    """
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    filename = os.path.basename(file_path)
+    mime_type, _ = mimetypes.guess_type(file_path)
+    mime_type = mime_type or "application/octet-stream"
+
+    with open(file_path, "rb") as fh:
+        content = fh.read()
+
+    with _client() as c:
+        r = c.post(
+            "/files",
+            data={"channel_id": channel_id},
+            files={"files": (filename, content, mime_type)},
+        )
+        r.raise_for_status()
+
+    data = r.json()
+    infos = data.get("file_infos", [])
+    if not infos:
+        raise RuntimeError(f"Upload succeeded but no file_infos returned: {data}")
+
+    fi = infos[0]
+    return json.dumps({
+        "file_id": fi.get("id"),
+        "name": fi.get("name"),
+        "size": fi.get("size"),
+        "mime_type": fi.get("mime_type"),
     }, indent=2)
 
 
