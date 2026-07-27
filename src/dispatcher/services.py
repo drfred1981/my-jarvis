@@ -41,6 +41,7 @@ SERVICE_REQUIREMENTS = {
     "forgejo": {"type": "env", "vars": ["FORGEJO_URL", "FORGEJO_TOKEN"]},
     "nexus": {"type": "env", "vars": ["NEXUS_URL", "NEXUS_USER", "NEXUS_PASSWORD"]},
     "woodpecker": {"type": "env", "vars": ["WOODPECKER_URL", "WOODPECKER_TOKEN"]},
+    "mattermost": {"type": "env", "vars": ["MATTERMOST_URL", "MATTERMOST_TOKEN"]},
     "memory": {"type": "always"},
     "skills": {"type": "always"},
     "discord-write": {"type": "env", "vars": ["DISCORD_BOT_TOKEN"]},

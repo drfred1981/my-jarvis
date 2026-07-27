@@ -64,6 +64,12 @@ class DiscordBot:
         # ([{"id","description"}]) or the legacy comma-separated list.
         self.allowed_channels: set[int] = channel_config.channel_ids(
             os.getenv("DISCORD_CHANNEL_IDS", ""))
+        # Also listen on the monitoring channel so the user can reply to alerts
+        # (bidirectionality). The bot already ignores its own messages, so there
+        # is no feedback loop risk.
+        _monitor_ch = os.getenv("JARVIS_MONITOR_CHANNEL_ID", "").strip()
+        if _monitor_ch:
+            self.allowed_channels.add(int(_monitor_ch))
 
         self._register_handlers()
 

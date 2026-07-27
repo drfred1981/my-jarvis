@@ -163,6 +163,12 @@
       "args": [
         "/opt/jarvis/app/src/mcp-servers/woodpecker/server.py"
       ]
+    },
+    "mattermost": {
+      "command": "python3",
+      "args": [
+        "/opt/jarvis/app/src/mcp-servers/mattermost/server.py"
+      ]
     }
   }
 }
